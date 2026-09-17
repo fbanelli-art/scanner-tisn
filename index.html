@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>Scanner TISN</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2@1.12.1/dist/quagga.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #eef1f4;
+      --card: #ffffff;
+      --text: #17202a;
+      --muted: #69737d;
+      --blue: #1565c0;
+      --green: #11863b;
+      --red: #b3261e;
+      --amber: #9a6700;
+      --border: #d5dbe1;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    body {
+      padding:
+        max(10px, env(safe-area-inset-top))
+        10px
+        max(14px, env(safe-area-inset-bottom));
+    }
+
+    .app {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      font-size: 22px;
+      margin: 0;
+    }
+
+    .counter {
+      background: #111827;
+      color: #fff;
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-weight: 700;
+      font-size: 18px;
+      min-width: 90px;
+      text-align: center;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: 14px;
+      padding: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.08);
+      margin-bottom: 10px;
+    }
+
+    .target-row {
+      display: grid;
+      grid-template-columns: 1fr 120px;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .target-row label {
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .target-row input {
+      width: 100%;
+      font-size: 18px;
+      font-weight: 700;
+      text-align: center;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+    }
+
+    #interactive {
+      position: relative;
+      width: 100%;
+      height: min(58vh, 470px);
+      min-height: 330px;
+      background: #000;
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    #interactive video,
+    #interactive canvas {
+      position: absolute;
+      inset: 0;
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover;
+    }
+
+    #interactive canvas.drawingBuffer {
+      display: none;
+    }
+
+    .shade {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 4;
+      background:
+        linear-gradient(to bottom,
+          rgba(0,0,0,.55) 0%,
+          rgba(0,0,0,.55) 31%,
+          transparent 31%,
+          transparent 61%,
+          rgba(0,0,0,.55) 61%,
+          rgba(0,0,0,.55) 100%);
+    }
+
+    .scan-zone {
+      position: absolute;
+      z-index: 5;
+      left: 5%;
+      right: 5%;
+      top: 31%;
+      height: 30%;
+      border: 3px solid #fff;
+      border-radius: 10px;
+      pointer-events: none;
+      box-shadow: 0 0 0 1px rgba(0,0,0,.2);
+    }
+
+    .scan-zone::after {
+      content: "";
+      position: absolute;
+      left: 5%;
+      right: 5%;
+      top: 50%;
+      height: 2px;
+      background: #ff3b30;
+      box-shadow: 0 0 7px rgba(255,59,48,.8);
+    }
+
+    .hint {
+      position: absolute;
+      z-index: 6;
+      left: 50%;
+      transform: translateX(-50%);
+      top: calc(31% - 34px);
+      white-space: nowrap;
+      color: #fff;
+      background: rgba(0,0,0,.72);
+      padding: 6px 10px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 700;
+      pointer-events: none;
+    }
+
+    .flash {
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+      opacity: 0;
+      background: rgba(24, 180, 80, .35);
+      transition: opacity .12s;
+    }
+
+    .flash.on { opacity: 1; }
+
+    .status {
+      margin-top: 10px;
+      border-radius: 10px;
+      padding: 11px 12px;
+      background: #edf1f4;
+      min-height: 44px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .status.ok { background: #e6f5ea; color: #126b2f; }
+    .status.err { background: #fde9e8; color: #9f1d16; }
+    .status.warn { background: #fff4d5; color: #765500; }
+
+    .last-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      margin-top: 10px;
+    }
+
+    .last-code {
+      margin-top: 3px;
+      min-height: 27px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 19px;
+      font-weight: 800;
+      word-break: break-all;
+    }
+
+    .buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+      margin-top: 10px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      min-height: 48px;
+      padding: 10px 8px;
+      font-weight: 800;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: .45;
+      cursor: default;
+    }
+
+    .start { background: var(--blue); color: #fff; }
+    .stop { background: #dfe3e7; color: #111; }
+    .danger { background: #f4dfdd; color: var(--red); }
+    .secondary { background: #e6e9ec; color: #222; }
+    .copy { background: var(--green); color: #fff; }
+
+    .list-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .list-head strong { font-size: 15px; }
+
+    #list {
+      max-height: 260px;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 40px 1fr 38px;
+      gap: 6px;
+      align-items: center;
+      padding: 9px 8px;
+      border-bottom: 1px solid #edf0f2;
+      background: #fff;
+    }
+
+    .row:last-child { border-bottom: 0; }
+
+    .num {
+      color: var(--muted);
+      text-align: center;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 14px;
+      font-weight: 800;
+      word-break: break-all;
+    }
+
+    .del {
+      width: 34px;
+      min-height: 34px;
+      padding: 0;
+      border-radius: 8px;
+      background: #f4dfdd;
+      color: var(--red);
+      font-size: 18px;
+    }
+
+    .empty {
+      color: var(--muted);
+      text-align: center;
+      padding: 18px;
+      font-size: 14px;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <div class="topbar">
+      <h1>Scanner TISN</h1>
+      <div id="counter" class="counter">0 letti</div>
+    </div>
+
+    <div class="card target-row">
+      <label for="targetQty">Quantità da acquisire<br><span style="font-weight:400;color:#69737d">0 = senza limite</span></label>
+      <input id="targetQty" type="number" min="0" step="1" value="0">
+    </div>
+
+    <div class="card">
+      <div id="interactive">
+        <div class="shade"></div>
+        <div class="hint">Metti il barcode TISN nella fascia</div>
+        <div class="scan-zone"></div>
+        <div id="flash" class="flash"></div>
+      </div>
+
+      <div id="status" class="status">Premi AVVIA SCANSIONE.</div>
+
+      <div class="last-label">ULTIMO TISN</div>
+      <div id="lastCode" class="last-code">—</div>
+
+      <div class="buttons">
+        <button id="btnStart" class="start" onclick="startScanner()">AVVIA SCANSIONE</button>
+        <button id="btnStop" class="stop" onclick="stopScanner()" disabled>STOP</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="list-head">
+        <strong>Seriali acquisiti</strong>
+        <span id="progress"></span>
+      </div>
+
+      <div id="list">
+        <div class="empty">Nessun seriale acquisito.</div>
+      </div>
+
+      <div class="buttons">
+        <button class="danger" onclick="removeLast()">ANNULLA ULTIMO</button>
+        <button class="secondary" onclick="clearAll()">AZZERA LISTA</button>
+      </div>
+
+      <div class="buttons">
+        <button class="copy" style="grid-column:1 / -1" onclick="copyAll()">COPIA TUTTI I SERIALI</button>
+      </div>
+
+      <div class="small">
+        Lettura limitata al formato CODE 39. Un codice viene acquisito solo dopo due letture consecutive uguali.
+        I duplicati vengono ignorati.
+      </div>
+    </div>
+  </div>
+
+<script>
+  const TISN_REGEX = /^%[A-Z0-9]{15,30}$/;
+
+  let running = false;
+  let accepted = [];
+  let acceptedSet = new Set();
+
+  let candidate = "";
+  let candidateHits = 0;
+  let candidateAt = 0;
+  let cooldownUntil = 0;
+
+  let audioCtx = null;
+
+  function initAudio() {
+    try {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === "suspended") {
+        audioCtx.resume();
+      }
+    } catch (_) {}
+  }
+
+  function beep(ok = true) {
+    try {
+      initAudio();
+      if (!audioCtx) return;
+
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      osc.type = "sine";
+      osc.frequency.value = ok ? 1050 : 380;
+      gain.gain.value = 0.07;
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      osc.start();
+      osc.stop(audioCtx.currentTime + (ok ? 0.08 : 0.12));
+    } catch (_) {}
+  }
+
+  function vibrate(pattern) {
+    try {
+      if (navigator.vibrate) navigator.vibrate(pattern);
+    } catch (_) {}
+  }
+
+  function normalizeCode(code) {
+    return String(code || "")
+      .trim()
+      .toUpperCase()
+      .replace(/^\*/, "")
+      .replace(/\*$/, "")
+      .replace(/\s+/g, "");
+  }
+
+  function isValidTisn(code) {
+    return TISN_REGEX.test(code);
+  }
+
+  function setStatus(text, type = "") {
+    const el = document.getElementById("status");
+    el.className = "status" + (type ? " " + type : "");
+    el.textContent = text;
+  }
+
+  function updateUI() {
+    const count = accepted.length;
+    document.getElementById("counter").textContent = count + (count === 1 ? " letto" : " letti");
+
+    const target = Math.max(0, parseInt(document.getElementById("targetQty").value || "0", 10));
+    document.getElementById("progress").textContent = target > 0 ? `${count}/${target}` : `${count}`;
+
+    const list = document.getElementById("list");
+
+    if (!count) {
+      list.innerHTML = '<div class="empty">Nessun seriale acquisito.</div>';
+      document.getElementById("lastCode").textContent = "—";
+      return;
+    }
+
+    list.innerHTML = accepted.map((x, i) => `
+      <div class="row">
+        <div class="num">${i + 1}</div>
+        <div class="code">${escapeHtml(x.code)}</div>
+        <button class="del" onclick="removeAt(${i})" aria-label="Elimina">×</button>
+      </div>
+    `).join("");
+
+    document.getElementById("lastCode").textContent = accepted[count - 1].code;
+    list.scrollTop = list.scrollHeight;
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  async function startScanner() {
+    if (running) return;
+
+    initAudio();
+
+    if (!window.isSecureContext) {
+      setStatus("La pagina deve essere aperta tramite HTTPS.", "err");
+      return;
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setStatus("Questo browser non consente l'accesso continuo alla fotocamera.", "err");
+      return;
+    }
+
+    setStatus("Apertura fotocamera...");
+    document.getElementById("btnStart").disabled = true;
+
+    const config = {
+      inputStream: {
+        name: "Live",
+        type: "LiveStream",
+        target: document.querySelector("#interactive"),
+        constraints: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
+        area: {
+          top: "30%",
+          right: "4%",
+          left: "4%",
+          bottom: "30%"
+        }
+      },
+
+      locator: {
+        patchSize: "medium",
+        halfSample: true
+      },
+
+      decoder: {
+        readers: ["code_39_reader"]
+      },
+
+      locate: true,
+
+      frequency: 12
+    };
+
+    Quagga.init(config, function(err) {
+      if (err) {
+        console.error(err);
+        running = false;
+        document.getElementById("btnStart").disabled = false;
+        document.getElementById("btnStop").disabled = true;
+        setStatus("Fotocamera non disponibile: " + (err.message || err), "err");
+        return;
+      }
+
+      candidate = "";
+      candidateHits = 0;
+      candidateAt = 0;
+      cooldownUntil = 0;
+
+      Quagga.start();
+      running = true;
+
+      document.getElementById("btnStart").disabled = true;
+      document.getElementById("btnStop").disabled = false;
+
+      setStatus("Scanner attivo. Inquadra il primo TISN.", "ok");
+    });
+  }
+
+  function stopScanner() {
+    if (!running) {
+      document.getElementById("btnStart").disabled = false;
+      document.getElementById("btnStop").disabled = true;
+      return;
+    }
+
+    try {
+      Quagga.stop();
+    } catch (_) {}
+
+    running = false;
+    document.getElementById("btnStart").disabled = false;
+    document.getElementById("btnStop").disabled = true;
+
+    setStatus("Scanner fermato.");
+  }
+
+  Quagga.onDetected(function(result) {
+    if (!running) return;
+    if (Date.now() < cooldownUntil) return;
+
+    const raw = result?.codeResult?.code;
+    const code = normalizeCode(raw);
+
+    if (!code) return;
+
+    if (!isValidTisn(code)) {
+      candidate = "";
+      candidateHits = 0;
+      return;
+    }
+
+    const now = Date.now();
+
+    if (code === candidate && (now - candidateAt) < 1400) {
+      candidateHits++;
+    } else {
+      candidate = code;
+      candidateHits = 1;
+    }
+
+    candidateAt = now;
+
+    // Due letture uguali consecutive: riduce i falsi positivi.
+    if (candidateHits < 2) {
+      setStatus("TISN individuato, verifica lettura...");
+      return;
+    }
+
+    candidate = "";
+    candidateHits = 0;
+    cooldownUntil = Date.now() + 650;
+
+    if (acceptedSet.has(code)) {
+      setStatus("Duplicato ignorato: " + code, "warn");
+      beep(false);
+      vibrate([35, 45, 35]);
+      return;
+    }
+
+    accepted.push({
+      code: code,
+      time: new Date().toISOString()
+    });
+
+    acceptedSet.add(code);
+
+    setStatus("ACQUISITO: " + code, "ok");
+    flashGreen();
+    beep(true);
+    vibrate(80);
+    updateUI();
+
+    const target = Math.max(0, parseInt(document.getElementById("targetQty").value || "0", 10));
+
+    if (target > 0 && accepted.length >= target) {
+      setStatus(`COMPLETATO: ${accepted.length}/${target}`, "ok");
+      beep(true);
+      setTimeout(() => stopScanner(), 250);
+    }
+  });
+
+  function flashGreen() {
+    const el = document.getElementById("flash");
+    el.classList.add("on");
+    setTimeout(() => el.classList.remove("on"), 180);
+  }
+
+  function removeAt(index) {
+    if (index < 0 || index >= accepted.length) return;
+    const removed = accepted.splice(index, 1)[0];
+    acceptedSet.delete(removed.code);
+    updateUI();
+    setStatus("Rimosso: " + removed.code);
+  }
+
+  function removeLast() {
+    if (!accepted.length) {
+      setStatus("La lista è già vuota.", "warn");
+      return;
+    }
+
+    const removed = accepted.pop();
+    acceptedSet.delete(removed.code);
+    updateUI();
+    setStatus("Ultimo seriale rimosso: " + removed.code);
+  }
+
+  function clearAll() {
+    accepted = [];
+    acceptedSet = new Set();
+    candidate = "";
+    candidateHits = 0;
+    updateUI();
+    setStatus("Lista azzerata.");
+  }
+
+  async function copyAll() {
+    if (!accepted.length) {
+      setStatus("Nessun seriale da copiare.", "warn");
+      return;
+    }
+
+    const text = accepted.map(x => x.code).join("\n");
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatus(`${accepted.length} seriali copiati negli appunti.`, "ok");
+      beep(true);
+    } catch (_) {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+      setStatus(`${accepted.length} seriali copiati negli appunti.`, "ok");
+    }
+  }
+
+  window.addEventListener("beforeunload", function() {
+    try {
+      if (running) Quagga.stop();
+    } catch (_) {}
+  });
+
+  updateUI();
+</script>
+</body>
+</html>
