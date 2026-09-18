@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>Scanner Multiplo MDS</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/zxing-wasm/dist/iife/reader/index.js"></script>
+
+  <style>
+    :root{
+      --bg:#eef1f4; --card:#fff; --text:#17202a; --muted:#68727c;
+      --blue:#1565c0; --green:#11863b; --red:#b3261e; --amber:#8a6500;
+      --border:#d4dae0;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
+    body{padding:max(10px,env(safe-area-inset-top)) 10px max(14px,env(safe-area-inset-bottom))}
+    .app{max-width:760px;margin:0 auto}
+    .top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+    h1{font-size:22px;margin:0}
+    .counter{background:#111827;color:#fff;border-radius:999px;padding:8px 14px;font-size:17px;font-weight:900;min-width:92px;text-align:center}
+    .card{background:var(--card);border-radius:14px;padding:12px;box-shadow:0 2px 10px rgba(0,0,0,.08);margin-bottom:10px}
+    .qtyrow{display:grid;grid-template-columns:1fr 110px;gap:10px;align-items:center}
+    .qtyrow label{font-size:14px;font-weight:800}
+    .qtyrow input{width:100%;padding:11px;border:1px solid var(--border);border-radius:9px;text-align:center;font-size:18px;font-weight:900}
+    #camWrap{position:relative;width:100%;height:min(62vh,500px);min-height:340px;background:#000;border-radius:14px;overflow:hidden}
+    video{width:100%;height:100%;object-fit:cover}
+    canvas{display:none}
+    .frame{position:absolute;left:3%;right:3%;top:8%;bottom:8%;border:3px solid #fff;border-radius:12px;pointer-events:none}
+    .frame::after{content:"";position:absolute;left:4%;right:4%;top:50%;height:2px;background:#ff3b30;box-shadow:0 0 8px rgba(255,59,48,.8)}
+    .hint{position:absolute;left:50%;transform:translateX(-50%);top:12px;background:rgba(0,0,0,.68);color:#fff;padding:6px 10px;border-radius:7px;font-size:12px;font-weight:800;white-space:nowrap}
+    .flash{position:absolute;inset:0;background:rgba(24,180,80,.33);opacity:0;pointer-events:none;transition:opacity .12s}
+    .flash.on{opacity:1}
+    .status{margin-top:10px;padding:11px;border-radius:9px;background:#edf1f4;font-size:14px;font-weight:800;line-height:1.35}
+    .status.ok{background:#e6f5ea;color:#126b2f}
+    .status.err{background:#fde9e8;color:#9f1d16}
+    .status.warn{background:#fff4d5;color:#735600}
+    .buttons{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:10px}
+    button{border:0;border-radius:10px;min-height:48px;padding:10px 8px;font-size:15px;font-weight:900}
+    button:disabled{opacity:.45}
+    .start{background:var(--blue);color:#fff}
+    .stop{background:#e4e7ea;color:#111}
+    .clear{background:#f4dfdd;color:var(--red)}
+    .copy{background:var(--green);color:#fff}
+    .summary{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .metric{background:#f5f6f7;border-radius:9px;padding:10px}
+    .metric .k{font-size:11px;color:var(--muted);font-weight:800}
+    .metric .v{font-size:22px;font-weight:900;margin-top:2px}
+    .boxid{margin-top:9px;padding:10px;border:1px solid var(--border);border-radius:9px}
+    .boxid .k{font-size:11px;color:var(--muted);font-weight:800}
+    .boxid .v{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;font-weight:900;word-break:break-all;margin-top:3px}
+    #list{margin-top:10px;border:1px solid var(--border);border-radius:10px;overflow:hidden;max-height:280px;overflow-y:auto}
+    .row{display:grid;grid-template-columns:40px 1fr;gap:6px;padding:9px;border-bottom:1px solid #edf0f2}
+    .row:last-child{border-bottom:0}
+    .n{color:var(--muted);text-align:center;font-size:13px;font-weight:900}
+    .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;font-weight:900;word-break:break-all}
+    .empty{padding:18px;text-align:center;color:var(--muted)}
+    .small{font-size:11px;color:var(--muted);line-height:1.4;margin-top:8px}
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <div class="top">
+    <h1>Scanner Multiplo MDS</h1>
+    <div id="counter" class="counter">0 letti</div>
+  </div>
+
+  <div class="card qtyrow">
+    <label for="expectedQty">Quantità modem del collo</label>
+    <input id="expectedQty" type="number" min="0" step="1" value="12">
+  </div>
+
+  <div class="card">
+    <div id="camWrap">
+      <video id="video" autoplay muted playsinline></video>
+      <div class="hint">Inquadra tutta l'etichetta</div>
+      <div class="frame"></div>
+      <div id="flash" class="flash"></div>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <div id="status" class="status">Premi AVVIA.</div>
+
+    <div class="buttons">
+      <button id="btnStart" class="start" onclick="startScanner()">AVVIA</button>
+      <button id="btnStop" class="stop" onclick="stopScanner()" disabled>STOP</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="summary">
+      <div class="metric">
+        <div class="k">TISN TROVATI</div>
+        <div id="foundCount" class="v">0</div>
+      </div>
+      <div class="metric">
+        <div class="k">ATTESI</div>
+        <div id="expectedCount" class="v">12</div>
+      </div>
+    </div>
+
+    <div class="boxid">
+      <div class="k">ID SCATOLA</div>
+      <div id="boxId" class="v">—</div>
+    </div>
+
+    <div id="list"><div class="empty">Nessun TISN acquisito.</div></div>
+
+    <div class="buttons">
+      <button class="clear" onclick="clearAll()">AZZERA</button>
+      <button class="copy" onclick="copyAll()">COPIA TUTTI</button>
+    </div>
+
+    <div class="small">
+      Solo barcode CODE 39. Nessun OCR. I codici vengono accumulati mentre muovi leggermente il telefono sul collo.
+    </div>
+  </div>
+
+</div>
+
+<script>
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+let stream = null;
+let running = false;
+let busy = false;
+let timer = null;
+
+let tisnSet = new Set();
+let boxId = "";
+
+let seenCounts = new Map();
+let audioCtx = null;
+
+document.getElementById("expectedQty").addEventListener("input", updateUI);
+
+function expectedQty(){
+  return Math.max(0, parseInt(document.getElementById("expectedQty").value || "0", 10));
+}
+
+function setStatus(text, type=""){
+  const e = document.getElementById("status");
+  e.className = "status" + (type ? " " + type : "");
+  e.textContent = text;
+}
+
+function normalizeCode(v){
+  return String(v || "")
+    .trim()
+    .toUpperCase()
+    .replace(/^\*/, "")
+    .replace(/\*$/, "")
+    .replace(/\s+/g, "");
+}
+
+function classify(code){
+  if(!/^%R[A-Z0-9]+$/.test(code)) return "other";
+  if(code.length === 22) return "tisn";
+  if(code.length >= 24) return "box";
+  return "other";
+}
+
+async function startScanner(){
+  if(running) return;
+
+  if(!navigator.mediaDevices?.getUserMedia){
+    setStatus("Browser senza accesso alla fotocamera.", "err");
+    return;
+  }
+
+  try{
+    initAudio();
+    setStatus("Apertura fotocamera...");
+    document.getElementById("btnStart").disabled = true;
+
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      },
+      audio: false
+    });
+
+    video.srcObject = stream;
+    await video.play();
+
+    running = true;
+    document.getElementById("btnStop").disabled = false;
+    setStatus("Scanner attivo. Inquadra tutta l'etichetta.", "ok");
+
+    timer = setInterval(scanFrame, 420);
+
+  }catch(err){
+    console.error(err);
+    document.getElementById("btnStart").disabled = false;
+    setStatus("Impossibile aprire la fotocamera: " + (err.message || err), "err");
+  }
+}
+
+function stopScanner(){
+  running = false;
+  busy = false;
+
+  if(timer){
+    clearInterval(timer);
+    timer = null;
+  }
+
+  if(stream){
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+
+  video.srcObject = null;
+
+  document.getElementById("btnStart").disabled = false;
+  document.getElementById("btnStop").disabled = true;
+  setStatus("Scanner fermato.");
+}
+
+async function scanFrame(){
+  if(!running || busy || video.readyState < 2) return;
+  busy = true;
+
+  try{
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if(!vw || !vh) return;
+
+    // Mantiene buona risoluzione ma evita frame enormi.
+    const maxW = 1700;
+    const scale = Math.min(1, maxW / vw);
+
+    canvas.width = Math.round(vw * scale);
+    canvas.height = Math.round(vh * scale);
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+    const results = await ZXingWASM.readBarcodes(imageData, {
+      formats: ["Code39"],
+      tryHarder: true,
+      maxNumberOfSymbols: 32
+    });
+
+    if(Array.isArray(results) && results.length){
+      processResults(results);
+    }
+
+  }catch(err){
+    console.error("Scan error:", err);
+  }finally{
+    busy = false;
+  }
+}
+
+function processResults(results){
+  let changed = false;
+
+  for(const r of results){
+    const code = normalizeCode(r.text);
+    if(!code) continue;
+
+    const type = classify(code);
+    if(type === "other") continue;
+
+    const count = (seenCounts.get(code) || 0) + 1;
+    seenCounts.set(code, count);
+
+    // Accettiamo solo dopo 2 rilevamenti: riduce falsi positivi.
+    if(count < 2) continue;
+
+    if(type === "box"){
+      if(!boxId){
+        boxId = code;
+        changed = true;
+      }
+      continue;
+    }
+
+    if(type === "tisn" && !tisnSet.has(code)){
+      tisnSet.add(code);
+      changed = true;
+    }
+  }
+
+  if(changed){
+    flash();
+    beep();
+    updateUI();
+
+    const exp = expectedQty();
+
+    if(exp > 0 && tisnSet.size === exp){
+      setStatus(`COLLO COMPLETO: ${tisnSet.size}/${exp}`, "ok");
+      setTimeout(stopScanner, 450);
+    }else if(exp > 0){
+      setStatus(`Trovati ${tisnSet.size}/${exp}. Muovi lentamente il telefono per far comparire quelli mancanti.`, "warn");
+    }else{
+      setStatus(`${tisnSet.size} TISN acquisiti.`, "ok");
+    }
+  }
+}
+
+function updateUI(){
+  const arr = [...tisnSet].sort();
+  const exp = expectedQty();
+
+  document.getElementById("counter").textContent =
+    arr.length + (arr.length === 1 ? " letto" : " letti");
+
+  document.getElementById("foundCount").textContent = arr.length;
+  document.getElementById("expectedCount").textContent = exp || "—";
+  document.getElementById("boxId").textContent = boxId || "—";
+
+  const list = document.getElementById("list");
+
+  if(!arr.length){
+    list.innerHTML = '<div class="empty">Nessun TISN acquisito.</div>';
+    return;
+  }
+
+  list.innerHTML = arr.map((c,i)=>`
+    <div class="row">
+      <div class="n">${i+1}</div>
+      <div class="code">${escapeHtml(c)}</div>
+    </div>
+  `).join("");
+
+  list.scrollTop = list.scrollHeight;
+}
+
+function clearAll(){
+  tisnSet = new Set();
+  boxId = "";
+  seenCounts = new Map();
+  updateUI();
+  setStatus("Elenco azzerato.");
+}
+
+async function copyAll(){
+  const arr = [...tisnSet].sort();
+  if(!arr.length){
+    setStatus("Nessun TISN da copiare.", "warn");
+    return;
+  }
+
+  const txt = arr.join("\n");
+
+  try{
+    await navigator.clipboard.writeText(txt);
+  }catch(_){
+    const ta = document.createElement("textarea");
+    ta.value = txt;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+
+  setStatus(`${arr.length} TISN copiati.`, "ok");
+  beep();
+}
+
+function flash(){
+  const e = document.getElementById("flash");
+  e.classList.add("on");
+  setTimeout(()=>e.classList.remove("on"), 160);
+}
+
+function initAudio(){
+  try{
+    if(!audioCtx){
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if(audioCtx.state === "suspended") audioCtx.resume();
+  }catch(_){}
+}
+
+function beep(){
+  try{
+    initAudio();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.frequency.value = 1000;
+    g.gain.value = .06;
+    o.connect(g);
+    g.connect(audioCtx.destination);
+    o.start();
+    o.stop(audioCtx.currentTime + .07);
+  }catch(_){}
+}
+
+function escapeHtml(v){
+  return String(v)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+window.addEventListener("beforeunload", ()=>{
+  try{ stopScanner(); }catch(_){}
+});
+
+updateUI();
+</script>
+</body>
+</html>
