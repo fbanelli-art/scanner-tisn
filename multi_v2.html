@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>Scanner Multiplo MDS v2</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/zxing-wasm/dist/iife/reader/index.js"></script>
+
+  <style>
+    :root{
+      --bg:#eef1f4; --card:#fff; --text:#17202a; --muted:#68727c;
+      --blue:#1565c0; --green:#11863b; --red:#b3261e; --amber:#8a6500;
+      --border:#d4dae0;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
+    body{padding:max(10px,env(safe-area-inset-top)) 10px max(14px,env(safe-area-inset-bottom))}
+    .app{max-width:760px;margin:0 auto}
+    .top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+    h1{font-size:22px;margin:0}
+    .counter{background:#111827;color:#fff;border-radius:999px;padding:8px 14px;font-size:17px;font-weight:900;min-width:92px;text-align:center}
+    .card{background:var(--card);border-radius:14px;padding:12px;box-shadow:0 2px 10px rgba(0,0,0,.08);margin-bottom:10px}
+    .qtyrow{display:grid;grid-template-columns:1fr 110px;gap:10px;align-items:center}
+    .qtyrow label{font-size:14px;font-weight:800}
+    .qtyrow input{width:100%;padding:11px;border:1px solid var(--border);border-radius:9px;text-align:center;font-size:18px;font-weight:900}
+    #camWrap{position:relative;width:100%;height:min(62vh,520px);min-height:360px;background:#000;border-radius:14px;overflow:hidden}
+    video{width:100%;height:100%;object-fit:cover}
+    canvas{display:none}
+    .frame{position:absolute;left:2%;right:2%;top:5%;bottom:5%;border:3px solid #fff;border-radius:12px;pointer-events:none}
+    .grid{position:absolute;inset:5% 2%;pointer-events:none;background:
+      linear-gradient(to right,transparent 49.7%,rgba(255,255,255,.55) 50%,transparent 50.3%),
+      linear-gradient(to bottom,transparent 24.8%,rgba(255,255,255,.35) 25%,transparent 25.2%,
+                               transparent 49.8%,rgba(255,255,255,.35) 50%,transparent 50.2%,
+                               transparent 74.8%,rgba(255,255,255,.35) 75%,transparent 75.2%);
+    }
+    .hint{position:absolute;left:50%;transform:translateX(-50%);top:12px;background:rgba(0,0,0,.68);color:#fff;padding:6px 10px;border-radius:7px;font-size:12px;font-weight:800;white-space:nowrap}
+    .flash{position:absolute;inset:0;background:rgba(24,180,80,.33);opacity:0;pointer-events:none;transition:opacity .12s}
+    .flash.on{opacity:1}
+    .status{margin-top:10px;padding:11px;border-radius:9px;background:#edf1f4;font-size:14px;font-weight:800;line-height:1.35}
+    .status.ok{background:#e6f5ea;color:#126b2f}
+    .status.err{background:#fde9e8;color:#9f1d16}
+    .status.warn{background:#fff4d5;color:#735600}
+    .buttons{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:10px}
+    button{border:0;border-radius:10px;min-height:48px;padding:10px 8px;font-size:15px;font-weight:900}
+    button:disabled{opacity:.45}
+    .start{background:var(--blue);color:#fff}
+    .stop{background:#e4e7ea;color:#111}
+    .clear{background:#f4dfdd;color:var(--red)}
+    .copy{background:var(--green);color:#fff}
+    .summary{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .metric{background:#f5f6f7;border-radius:9px;padding:10px}
+    .metric .k{font-size:11px;color:var(--muted);font-weight:800}
+    .metric .v{font-size:22px;font-weight:900;margin-top:2px}
+    .boxid{margin-top:9px;padding:10px;border:1px solid var(--border);border-radius:9px}
+    .boxid .k{font-size:11px;color:var(--muted);font-weight:800}
+    .boxid .v{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;font-weight:900;word-break:break-all;margin-top:3px}
+    #list{margin-top:10px;border:1px solid var(--border);border-radius:10px;overflow:hidden;max-height:280px;overflow-y:auto}
+    .row{display:grid;grid-template-columns:40px 1fr 90px;gap:6px;padding:9px;border-bottom:1px solid #edf0f2;align-items:center}
+    .row:last-child{border-bottom:0}
+    .n{color:var(--muted);text-align:center;font-size:13px;font-weight:900}
+    .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;font-weight:900;word-break:break-all}
+    .fmt{font-size:11px;color:var(--muted);text-align:right}
+    .empty{padding:18px;text-align:center;color:var(--muted)}
+    .small{font-size:11px;color:var(--muted);line-height:1.4;margin-top:8px}
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <div class="top">
+    <h1>Scanner Multiplo MDS v2</h1>
+    <div id="counter" class="counter">0 letti</div>
+  </div>
+
+  <div class="card qtyrow">
+    <label for="expectedQty">Quantità modem del collo</label>
+    <input id="expectedQty" type="number" min="0" step="1" value="12">
+  </div>
+
+  <div class="card">
+    <div id="camWrap">
+      <video id="video" autoplay muted playsinline></video>
+      <div class="hint">Inquadra tutta l'etichetta e resta fermo 1-2 sec</div>
+      <div class="frame"></div>
+      <div class="grid"></div>
+      <div id="flash" class="flash"></div>
+    </div>
+
+    <canvas id="fullCanvas"></canvas>
+    <canvas id="tileCanvas"></canvas>
+
+    <div id="status" class="status">Premi AVVIA.</div>
+
+    <div class="buttons">
+      <button id="btnStart" class="start" onclick="startScanner()">AVVIA</button>
+      <button id="btnStop" class="stop" onclick="stopScanner()" disabled>STOP</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="summary">
+      <div class="metric">
+        <div class="k">TISN TROVATI</div>
+        <div id="foundCount" class="v">0</div>
+      </div>
+      <div class="metric">
+        <div class="k">ATTESI</div>
+        <div id="expectedCount" class="v">12</div>
+      </div>
+    </div>
+
+    <div class="boxid">
+      <div class="k">ID SCATOLA</div>
+      <div id="boxId" class="v">—</div>
+    </div>
+
+    <div id="list"><div class="empty">Nessun TISN acquisito.</div></div>
+
+    <div class="buttons">
+      <button class="clear" onclick="clearAll()">AZZERA</button>
+      <button class="copy" onclick="copyAll()">COPIA TUTTI</button>
+    </div>
+
+    <div class="small">
+      Nessun OCR. Il frame viene diviso automaticamente in riquadri sovrapposti ad alta risoluzione.
+      Cerca Code 39 e Code 128, poi accetta solo codici con struttura %R....
+    </div>
+  </div>
+
+</div>
+
+<script>
+const video = document.getElementById("video");
+const fullCanvas = document.getElementById("fullCanvas");
+const tileCanvas = document.getElementById("tileCanvas");
+const fullCtx = fullCanvas.getContext("2d", { willReadFrequently: true });
+const tileCtx = tileCanvas.getContext("2d", { willReadFrequently: true });
+
+let stream = null;
+let running = false;
+let busy = false;
+let timer = null;
+
+let tisnMap = new Map();
+let boxId = "";
+let seenCounts = new Map();
+let audioCtx = null;
+
+document.getElementById("expectedQty").addEventListener("input", updateUI);
+
+function expectedQty(){
+  return Math.max(0, parseInt(document.getElementById("expectedQty").value || "0", 10));
+}
+
+function setStatus(text, type=""){
+  const e = document.getElementById("status");
+  e.className = "status" + (type ? " " + type : "");
+  e.textContent = text;
+}
+
+function normalizeCode(v){
+  return String(v || "")
+    .trim()
+    .toUpperCase()
+    .replace(/^\*/, "")
+    .replace(/\*$/, "")
+    .replace(/\s+/g, "");
+}
+
+function classify(code){
+  if(!/^%R[A-Z0-9]+$/.test(code)) return "other";
+  if(code.length >= 19 && code.length <= 24) return "tisn";
+  if(code.length >= 25) return "box";
+  return "other";
+}
+
+async function startScanner(){
+  if(running) return;
+
+  if(!navigator.mediaDevices?.getUserMedia){
+    setStatus("Browser senza accesso alla fotocamera.", "err");
+    return;
+  }
+
+  try{
+    initAudio();
+    setStatus("Apertura fotocamera...");
+    document.getElementById("btnStart").disabled = true;
+
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 3840 },
+        height: { ideal: 2160 }
+      },
+      audio: false
+    });
+
+    video.srcObject = stream;
+    await video.play();
+
+    running = true;
+    document.getElementById("btnStop").disabled = false;
+
+    setStatus("Scanner attivo. Inquadra l'etichetta; il sistema la divide in zone.", "ok");
+
+    timer = setInterval(scanFrameTiled, 750);
+
+  }catch(err){
+    console.error(err);
+    document.getElementById("btnStart").disabled = false;
+    setStatus("Impossibile aprire la fotocamera: " + (err.message || err), "err");
+  }
+}
+
+function stopScanner(){
+  running = false;
+  busy = false;
+
+  if(timer){
+    clearInterval(timer);
+    timer = null;
+  }
+
+  if(stream){
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+
+  video.srcObject = null;
+  document.getElementById("btnStart").disabled = false;
+  document.getElementById("btnStop").disabled = true;
+  setStatus("Scanner fermato.");
+}
+
+async function scanFrameTiled(){
+  if(!running || busy || video.readyState < 2) return;
+  busy = true;
+
+  try{
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if(!vw || !vh) return;
+
+    // Manteniamo più dettaglio del primo test.
+    const targetW = Math.min(vw, 2560);
+    const scale = targetW / vw;
+
+    fullCanvas.width = Math.round(vw * scale);
+    fullCanvas.height = Math.round(vh * scale);
+    fullCtx.drawImage(video, 0, 0, fullCanvas.width, fullCanvas.height);
+
+    const regions = buildRegions(fullCanvas.width, fullCanvas.height);
+
+    for(let i=0; i<regions.length; i++){
+      if(!running) break;
+
+      const r = regions[i];
+
+      tileCanvas.width = r.w;
+      tileCanvas.height = r.h;
+      tileCtx.clearRect(0,0,r.w,r.h);
+      tileCtx.drawImage(fullCanvas, r.x,r.y,r.w,r.h, 0,0,r.w,r.h);
+
+      const imageData = tileCtx.getImageData(0,0,r.w,r.h);
+
+      const results = await ZXingWASM.readBarcodes(imageData, {
+        formats: ["Code39","Code128"],
+        tryHarder: true,
+        maxNumberOfSymbols: 16
+      });
+
+      if(Array.isArray(results) && results.length){
+        processResults(results);
+      }
+
+      const exp = expectedQty();
+      if(exp > 0 && tisnMap.size >= exp){
+        break;
+      }
+    }
+
+  }catch(err){
+    console.error("Scan error:", err);
+    setStatus("Errore lettura: " + (err.message || err), "err");
+  }finally{
+    busy = false;
+  }
+}
+
+function buildRegions(W,H){
+  const out = [];
+
+  // Prima frame intero.
+  out.push({x:0,y:0,w:W,h:H});
+
+  // 2 colonne x 4 righe, con overlap generoso.
+  const cols = 2;
+  const rows = 4;
+  const tileW = Math.round(W * 0.62);
+  const tileH = Math.round(H * 0.34);
+
+  for(let r=0;r<rows;r++){
+    const cy = (r + 0.5) * H / rows;
+    for(let c=0;c<cols;c++){
+      const cx = c === 0 ? W*0.30 : W*0.70;
+      const x = clamp(Math.round(cx - tileW/2), 0, W-tileW);
+      const y = clamp(Math.round(cy - tileH/2), 0, H-tileH);
+      out.push({x,y,w:tileW,h:tileH});
+    }
+  }
+
+  // 3 fasce orizzontali larghe: utili per etichette con righe.
+  const bandH = Math.round(H*0.42);
+  for(const frac of [0.22,0.50,0.78]){
+    const y = clamp(Math.round(H*frac - bandH/2), 0, H-bandH);
+    out.push({x:0,y,w:W,h:bandH});
+  }
+
+  return out;
+}
+
+function clamp(v,min,max){
+  return Math.max(min,Math.min(max,v));
+}
+
+function processResults(results){
+  let changed = false;
+
+  for(const r of results){
+    const code = normalizeCode(r.text);
+    if(!code) continue;
+
+    const type = classify(code);
+    if(type === "other") continue;
+
+    const key = code;
+    const count = (seenCounts.get(key) || 0) + 1;
+    seenCounts.set(key, count);
+
+    // Con frame a tasselli accettiamo dopo 2 conferme.
+    if(count < 2) continue;
+
+    if(type === "box"){
+      if(!boxId){
+        boxId = code;
+        changed = true;
+      }
+      continue;
+    }
+
+    if(type === "tisn" && !tisnMap.has(code)){
+      tisnMap.set(code, r.format || "");
+      changed = true;
+    }
+  }
+
+  if(changed){
+    flash();
+    beep();
+    updateUI();
+
+    const exp = expectedQty();
+    if(exp > 0 && tisnMap.size === exp){
+      setStatus(`COLLO COMPLETO: ${tisnMap.size}/${exp}`, "ok");
+      setTimeout(stopScanner, 500);
+    }else if(exp > 0){
+      setStatus(`Trovati ${tisnMap.size}/${exp}. Tieni fermo o sposta leggermente il telefono.`, "warn");
+    }else{
+      setStatus(`${tisnMap.size} TISN acquisiti.`, "ok");
+    }
+  }
+}
+
+function updateUI(){
+  const arr = [...tisnMap.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
+  const exp = expectedQty();
+
+  document.getElementById("counter").textContent =
+    arr.length + (arr.length === 1 ? " letto" : " letti");
+
+  document.getElementById("foundCount").textContent = arr.length;
+  document.getElementById("expectedCount").textContent = exp || "—";
+  document.getElementById("boxId").textContent = boxId || "—";
+
+  const list = document.getElementById("list");
+
+  if(!arr.length){
+    list.innerHTML = '<div class="empty">Nessun TISN acquisito.</div>';
+    return;
+  }
+
+  list.innerHTML = arr.map(([code,fmt],i)=>`
+    <div class="row">
+      <div class="n">${i+1}</div>
+      <div class="code">${escapeHtml(code)}</div>
+      <div class="fmt">${escapeHtml(fmt)}</div>
+    </div>
+  `).join("");
+
+  list.scrollTop = list.scrollHeight;
+}
+
+function clearAll(){
+  tisnMap = new Map();
+  boxId = "";
+  seenCounts = new Map();
+  updateUI();
+  setStatus("Elenco azzerato.");
+}
+
+async function copyAll(){
+  const arr = [...tisnMap.keys()].sort();
+  if(!arr.length){
+    setStatus("Nessun TISN da copiare.", "warn");
+    return;
+  }
+
+  const txt = arr.join("\n");
+
+  try{
+    await navigator.clipboard.writeText(txt);
+  }catch(_){
+    const ta = document.createElement("textarea");
+    ta.value = txt;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+
+  setStatus(`${arr.length} TISN copiati.`, "ok");
+  beep();
+}
+
+function flash(){
+  const e = document.getElementById("flash");
+  e.classList.add("on");
+  setTimeout(()=>e.classList.remove("on"), 160);
+}
+
+function initAudio(){
+  try{
+    if(!audioCtx){
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if(audioCtx.state === "suspended") audioCtx.resume();
+  }catch(_){}
+}
+
+function beep(){
+  try{
+    initAudio();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.frequency.value = 1000;
+    g.gain.value = .06;
+    o.connect(g);
+    g.connect(audioCtx.destination);
+    o.start();
+    o.stop(audioCtx.currentTime + .07);
+  }catch(_){}
+}
+
+function escapeHtml(v){
+  return String(v)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+window.addEventListener("beforeunload", ()=>{
+  try{ stopScanner(); }catch(_){}
+});
+
+updateUI();
+</script>
+</body>
+</html>
