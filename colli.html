@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>Scanner Collo MDS</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2@1.12.1/dist/quagga.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#eef1f4; --card:#fff; --text:#17202a; --muted:#68727c;
+      --blue:#1565c0; --green:#11863b; --red:#b3261e; --amber:#8a6500;
+      --border:#d4dae0;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
+    body{padding:max(10px,env(safe-area-inset-top)) 10px max(14px,env(safe-area-inset-bottom))}
+    .app{max-width:760px;margin:0 auto}
+    .card{background:var(--card);border-radius:14px;padding:14px;box-shadow:0 2px 10px rgba(0,0,0,.08);margin-bottom:10px}
+    h1{font-size:22px;margin:0 0 5px}
+    .sub{font-size:13px;color:var(--muted);margin-bottom:12px;line-height:1.4}
+    .qtyrow{display:grid;grid-template-columns:1fr 110px;gap:10px;align-items:center}
+    .qtyrow label{font-size:14px;font-weight:700}
+    .qtyrow input{width:100%;padding:11px;border:1px solid var(--border);border-radius:9px;text-align:center;font-size:18px;font-weight:800}
+    .photoBtn,.analyseBtn,.copyBtn{width:100%;border:0;border-radius:11px;min-height:52px;font-size:16px;font-weight:800;color:#fff}
+    .photoBtn{background:var(--blue)}
+    .analyseBtn{background:#111827;margin-top:9px}
+    .copyBtn{background:var(--green);margin-top:9px}
+    #fileInput{display:none}
+    #preview{display:none;width:100%;max-height:52vh;object-fit:contain;background:#111;border-radius:11px;margin-top:10px}
+    .status{margin-top:10px;padding:11px;border-radius:9px;background:#edf1f4;font-size:14px;font-weight:700;line-height:1.35}
+    .status.ok{background:#e6f5ea;color:#126b2f}
+    .status.err{background:#fde9e8;color:#9f1d16}
+    .status.warn{background:#fff4d5;color:#735600}
+    .summary{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+    .metric{background:#f5f6f7;border-radius:9px;padding:10px}
+    .metric .k{font-size:11px;color:var(--muted);font-weight:700}
+    .metric .v{font-size:20px;font-weight:900;margin-top:2px;word-break:break-all}
+    .boxid{margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:9px}
+    .boxid .k{font-size:11px;color:var(--muted);font-weight:700}
+    .boxid .v{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:15px;font-weight:800;margin-top:4px;word-break:break-all}
+    #list{margin-top:10px;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+    .row{display:grid;grid-template-columns:40px 1fr;gap:6px;padding:9px;border-bottom:1px solid #edf0f2}
+    .row:last-child{border-bottom:0}
+    .n{color:var(--muted);text-align:center;font-size:13px;font-weight:800}
+    .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;font-weight:800;word-break:break-all}
+    .empty{padding:18px;text-align:center;color:var(--muted)}
+    .small{font-size:11px;color:var(--muted);line-height:1.4;margin-top:9px}
+    .progress{height:8px;background:#e5e7eb;border-radius:99px;overflow:hidden;margin-top:10px}
+    .progress>div{height:100%;width:0;background:var(--blue);transition:width .2s}
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <div class="card">
+    <h1>Scanner Collo MDS</h1>
+    <div class="sub">
+      Prova sperimentale: una foto dell'etichetta completa, ricerca automatica dei barcode CODE 39 e raccolta dei TISN.
+      Per ora la quantità attesa la inserisci tu.
+    </div>
+
+    <div class="qtyrow">
+      <label for="expectedQty">Quantità modem indicata sul collo</label>
+      <input id="expectedQty" type="number" min="0" step="1" value="12">
+    </div>
+
+    <button class="photoBtn" onclick="openCamera()">📷 FOTOGRAFA ETICHETTA COLLO</button>
+    <input id="fileInput" type="file" accept="image/*" capture="environment" onchange="photoSelected(this)">
+
+    <img id="preview">
+
+    <button id="analyseBtn" class="analyseBtn" onclick="analyseCurrent()" disabled>ANALIZZA FOTO</button>
+
+    <div class="progress"><div id="progressBar"></div></div>
+    <div id="status" class="status">Pronto.</div>
+  </div>
+
+  <div class="card">
+    <div class="summary">
+      <div class="metric">
+        <div class="k">TISN TROVATI</div>
+        <div id="foundCount" class="v">0</div>
+      </div>
+      <div class="metric">
+        <div class="k">QUANTITÀ ATTESA</div>
+        <div id="expectedCount" class="v">12</div>
+      </div>
+    </div>
+
+    <div class="boxid">
+      <div class="k">ID SCATOLA RILEVATO</div>
+      <div id="boxId" class="v">—</div>
+    </div>
+
+    <div id="list">
+      <div class="empty">Nessun TISN trovato.</div>
+    </div>
+
+    <button class="copyBtn" onclick="copyCodes()">COPIA TUTTI I TISN</button>
+
+    <div class="small">
+      Consiglio per la prova: tieni il telefono parallelo all'etichetta, buona luce, foto nitida.
+      È meglio che i barcode risultino orizzontali sullo schermo e occupino gran parte della foto.
+    </div>
+  </div>
+
+</div>
+
+<script>
+let currentImage = null;
+let found = new Set();
+let detectedBoxId = "";
+
+document.getElementById("expectedQty").addEventListener("input", updateUI);
+
+function openCamera(){
+  const i = document.getElementById("fileInput");
+  i.value = "";
+  i.click();
+}
+
+function photoSelected(input){
+  const f = input.files && input.files[0];
+  if(!f) return;
+
+  const r = new FileReader();
+  r.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      currentImage = img;
+      document.getElementById("preview").src = e.target.result;
+      document.getElementById("preview").style.display = "block";
+      document.getElementById("analyseBtn").disabled = false;
+      setStatus("Foto caricata. Premi ANALIZZA FOTO.");
+    };
+    img.src = e.target.result;
+  };
+  r.readAsDataURL(f);
+}
+
+async function analyseCurrent(){
+  if(!currentImage) return;
+
+  found = new Set();
+  detectedBoxId = "";
+  updateUI();
+
+  document.getElementById("analyseBtn").disabled = true;
+  setStatus("Analisi in corso... non chiudere la pagina.");
+  setProgress(2);
+
+  try{
+    const base = normalizeImage(currentImage, 2200);
+
+    const jobs = buildJobs(base);
+    let done = 0;
+
+    for(const src of jobs){
+      const result = await decode39(src);
+      done++;
+      setProgress(Math.round((done / jobs.length) * 100));
+
+      if(result){
+        registerCode(result);
+      }
+    }
+
+    updateUI();
+
+    const exp = getExpected();
+    if(found.size === 0){
+      setStatus("Nessun TISN riconosciuto. Prova una foto più vicina e perfettamente a fuoco.", "err");
+    }else if(exp > 0 && found.size === exp){
+      setStatus(`COLLO COMPLETO: ${found.size}/${exp} TISN trovati.`, "ok");
+      beep();
+    }else if(exp > 0){
+      setStatus(`Lettura parziale: ${found.size}/${exp}. Prova una seconda foto più vicina: i duplicati verranno ignorati.`, "warn");
+    }else{
+      setStatus(`${found.size} TISN trovati.`, "ok");
+    }
+
+  }catch(err){
+    console.error(err);
+    setStatus("Errore durante l'analisi: " + (err.message || err), "err");
+  }finally{
+    document.getElementById("analyseBtn").disabled = false;
+  }
+}
+
+function normalizeImage(img, maxSide){
+  let w = img.naturalWidth, h = img.naturalHeight;
+  const scale = Math.min(1, maxSide / Math.max(w,h));
+  w = Math.round(w*scale);
+  h = Math.round(h*scale);
+
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const ctx = c.getContext("2d", {willReadFrequently:true});
+  ctx.drawImage(img,0,0,w,h);
+  return c;
+}
+
+function buildJobs(canvas){
+  const out = [];
+
+  // Foto intera
+  out.push(canvas.toDataURL("image/jpeg", .95));
+
+  const W = canvas.width, H = canvas.height;
+
+  // Strisce orizzontali sovrapposte: utili per righe di TISN.
+  const rows = 14;
+  const stripH = Math.max(160, Math.floor(H / 5.5));
+  for(let i=0;i<rows;i++){
+    const cy = (i + .5) * H / rows;
+    const y = Math.max(0, Math.min(H-stripH, Math.floor(cy-stripH/2)));
+    out.push(crop(canvas, 0, y, W, stripH));
+  }
+
+  // Griglia 2 colonne x 12 righe, con margine/overlap.
+  const cols = 2, rws = 12;
+  const tileW = Math.floor(W * .62);
+  const tileH = Math.max(170, Math.floor(H * .22));
+
+  for(let r=0;r<rws;r++){
+    const cy = (r + .5) * H / rws;
+    for(let col=0; col<cols; col++){
+      const cx = col === 0 ? W*.30 : W*.70;
+      const x = Math.max(0, Math.min(W-tileW, Math.floor(cx-tileW/2)));
+      const y = Math.max(0, Math.min(H-tileH, Math.floor(cy-tileH/2)));
+      out.push(crop(canvas, x, y, tileW, tileH));
+    }
+  }
+
+  // Anche immagine ruotata 90° per foto prese girate.
+  const rot = rotate90(canvas);
+  out.push(rot.toDataURL("image/jpeg", .95));
+
+  const RW = rot.width, RH = rot.height;
+  const rotStripH = Math.max(160, Math.floor(RH / 5.5));
+  for(let i=0;i<10;i++){
+    const cy = (i + .5) * RH / 10;
+    const y = Math.max(0, Math.min(RH-rotStripH, Math.floor(cy-rotStripH/2)));
+    out.push(crop(rot, 0, y, RW, rotStripH));
+  }
+
+  return out;
+}
+
+function crop(source, sx, sy, sw, sh){
+  const c = document.createElement("canvas");
+  c.width = sw; c.height = sh;
+  c.getContext("2d", {willReadFrequently:true}).drawImage(source, sx, sy, sw, sh, 0,0,sw,sh);
+  return c.toDataURL("image/jpeg", .98);
+}
+
+function rotate90(source){
+  const c = document.createElement("canvas");
+  c.width = source.height;
+  c.height = source.width;
+  const ctx = c.getContext("2d");
+  ctx.translate(c.width,0);
+  ctx.rotate(Math.PI/2);
+  ctx.drawImage(source,0,0);
+  return c;
+}
+
+function decode39(src){
+  return new Promise(resolve => {
+    Quagga.decodeSingle({
+      src,
+      numOfWorkers: 0,
+      locate: true,
+      inputStream: { size: 0 },
+      decoder: { readers: ["code_39_reader"] },
+      locator: { halfSample: false, patchSize: "medium" }
+    }, result => {
+      const code = result?.codeResult?.code;
+      resolve(code ? normalizeCode(code) : null);
+    });
+  });
+}
+
+function normalizeCode(code){
+  return String(code || "")
+    .trim()
+    .toUpperCase()
+    .replace(/^\*/, "")
+    .replace(/\*$/, "")
+    .replace(/\s+/g,"");
+}
+
+function registerCode(code){
+  if(!code || !code.startsWith("%R")) return;
+
+  // ID scatola: negli esempi inviati è più lungo del normale TISN
+  // e/o termina con NS / VSN.
+  if(code.length >= 24 || /(?:NS|VSN)$/.test(code)){
+    if(!detectedBoxId || code.length > detectedBoxId.length){
+      detectedBoxId = code;
+    }
+    return;
+  }
+
+  // TISN modem: accettiamo una finestra abbastanza larga
+  // per TIM/Huawei/ZTE degli esempi.
+  if(code.length >= 19 && code.length <= 23){
+    found.add(code);
+  }
+}
+
+function getExpected(){
+  return Math.max(0, parseInt(document.getElementById("expectedQty").value || "0",10));
+}
+
+function updateUI(){
+  const exp = getExpected();
+  document.getElementById("expectedCount").textContent = exp || "—";
+  document.getElementById("foundCount").textContent = found.size;
+  document.getElementById("boxId").textContent = detectedBoxId || "—";
+
+  const list = document.getElementById("list");
+  const arr = [...found].sort();
+
+  if(!arr.length){
+    list.innerHTML = '<div class="empty">Nessun TISN trovato.</div>';
+    return;
+  }
+
+  list.innerHTML = arr.map((c,i) => `
+    <div class="row">
+      <div class="n">${i+1}</div>
+      <div class="code">${escapeHtml(c)}</div>
+    </div>
+  `).join("");
+}
+
+function setStatus(text,type=""){
+  const e = document.getElementById("status");
+  e.className = "status" + (type ? " " + type : "");
+  e.textContent = text;
+}
+
+function setProgress(p){
+  document.getElementById("progressBar").style.width = Math.max(0,Math.min(100,p)) + "%";
+}
+
+function escapeHtml(v){
+  return String(v)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+async function copyCodes(){
+  const arr = [...found].sort();
+  if(!arr.length){
+    setStatus("Nessun TISN da copiare.", "warn");
+    return;
+  }
+
+  const text = arr.join("\n");
+  try{
+    await navigator.clipboard.writeText(text);
+  }catch(_){
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+  setStatus(`${arr.length} TISN copiati negli appunti.`, "ok");
+  beep();
+}
+
+function beep(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.frequency.value = 950;
+    g.gain.value = .06;
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + .09);
+  }catch(_){}
+}
+</script>
+</body>
+</html>
