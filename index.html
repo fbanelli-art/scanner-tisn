@@ -371,7 +371,7 @@
   </div>
 
 <script>
-  const TISN_REGEX = /^%[A-Z0-9]{15,30}$/;
+  const TISN_REGEX = /^%R[A-Z0-9]{17,22}$/;
 
   let running = false;
   let accepted = [];
@@ -421,14 +421,20 @@
     } catch (_) {}
   }
 
-  function normalizeCode(code) {
-    return String(code || "")
-      .trim()
-      .toUpperCase()
-      .replace(/^\*/, "")
-      .replace(/\*$/, "")
-      .replace(/\s+/g, "");
-  }
+    function normalizeCode(value) {
+      let code = String(value || "")
+        .trim()
+        .toUpperCase()
+        .replace(/^\*/, "")
+        .replace(/\*$/, "")
+        .replace(/\s+/g, "");
+
+      if (/^}[A-Z0-9]/.test(code)) {
+        code = "%R" + code.slice(1);
+      }
+
+      return code;
+    }
 
   function isValidTisn(code) {
     return TISN_REGEX.test(code);
