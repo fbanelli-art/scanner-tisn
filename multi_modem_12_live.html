@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>Scanner MULTI MODEM Live</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/zxing-wasm/dist/iife/reader/index.js"></script>
+
+  <style>
+    :root{
+      --bg:#eef1f4; --card:#fff; --text:#17202a; --muted:#69737d;
+      --blue:#1565c0; --green:#11863b; --red:#b3261e;
+      --border:#d5dbe1;
+    }
+
+    *{box-sizing:border-box}
+
+    html,body{
+      margin:0;
+      min-height:100%;
+      font-family:Arial,Helvetica,sans-serif;
+      background:var(--bg);
+      color:var(--text);
+    }
+
+    body{
+      padding:max(8px,env(safe-area-inset-top)) 8px max(12px,env(safe-area-inset-bottom));
+    }
+
+    .app{max-width:760px;margin:0 auto}
+
+    .topbar{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:8px;
+      margin-bottom:8px;
+    }
+
+    h1{margin:0;font-size:21px}
+
+    .counter{
+      background:#111827;
+      color:#fff;
+      border-radius:999px;
+      padding:7px 12px;
+      font-weight:900;
+      min-width:92px;
+      text-align:center;
+    }
+
+    .card{
+      background:var(--card);
+      border-radius:12px;
+      padding:10px;
+      box-shadow:0 2px 8px rgba(0,0,0,.07);
+      margin-bottom:8px;
+    }
+
+    #cameraBox{
+      position:relative;
+      width:100%;
+      height:clamp(220px,58vw,330px);
+      background:#000;
+      border-radius:11px;
+      overflow:hidden;
+    }
+
+    #video{
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      object-fit:fill;
+      background:#000;
+    }
+
+    #scanZone{
+      position:absolute;
+      z-index:3;
+      border:2px solid #fff;
+      border-radius:8px;
+      pointer-events:none;
+      box-shadow:0 0 0 9999px rgba(0,0,0,.28);
+    }
+
+    .hint{
+      position:absolute;
+      z-index:4;
+      top:6px;
+      left:50%;
+      transform:translateX(-50%);
+      padding:4px 7px;
+      border-radius:6px;
+      background:rgba(0,0,0,.70);
+      color:#fff;
+      font-size:11px;
+      font-weight:800;
+      white-space:nowrap;
+      pointer-events:none;
+    }
+
+    .flash{
+      position:absolute;
+      inset:0;
+      z-index:5;
+      background:rgba(24,180,80,.28);
+      opacity:0;
+      pointer-events:none;
+      transition:opacity .10s;
+    }
+
+    .flash.on{opacity:1}
+
+    #scanCanvas{display:none}
+
+    .status{
+      margin-top:8px;
+      min-height:42px;
+      padding:9px 10px;
+      border-radius:9px;
+      background:#edf1f4;
+      font-size:13px;
+      font-weight:800;
+      line-height:1.35;
+    }
+
+    .status.ok{background:#e6f5ea;color:#126b2f}
+    .status.warn{background:#fff4d5;color:#755600}
+    .status.err{background:#fde9e8;color:#9f1d16}
+
+    .buttons{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:7px;
+      margin-top:8px;
+    }
+
+    button{
+      border:0;
+      border-radius:9px;
+      min-height:44px;
+      padding:8px;
+      font-size:14px;
+      font-weight:900;
+      cursor:pointer;
+    }
+
+    button:disabled{opacity:.45;cursor:default}
+
+    .start{background:var(--blue);color:#fff}
+    .stop{background:#e4e7ea;color:#111}
+    .danger{background:#f4dfdd;color:var(--red)}
+    .copy{background:var(--green);color:#fff}
+
+    .summary{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:8px;
+    }
+
+    .metric{
+      background:#f5f6f7;
+      border-radius:9px;
+      padding:9px;
+    }
+
+    .metric .k{
+      color:var(--muted);
+      font-size:10px;
+      font-weight:800;
+    }
+
+    .metric .v{
+      margin-top:2px;
+      font-size:24px;
+      font-weight:900;
+    }
+
+    .list-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin:9px 0 6px;
+      font-size:14px;
+    }
+
+    #list{
+      max-height:300px;
+      overflow:auto;
+      border:1px solid var(--border);
+      border-radius:9px;
+    }
+
+    .row{
+      display:grid;
+      grid-template-columns:34px 1fr 70px 32px;
+      gap:5px;
+      align-items:center;
+      padding:7px 6px;
+      border-bottom:1px solid #edf0f2;
+    }
+
+    .row:last-child{border-bottom:0}
+
+    .num{
+      color:var(--muted);
+      text-align:center;
+      font-size:12px;
+      font-weight:800;
+    }
+
+    .code{
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+      font-size:12px;
+      font-weight:900;
+      word-break:break-all;
+    }
+
+    .fmt{
+      color:var(--muted);
+      font-size:10px;
+      text-align:right;
+    }
+
+    .del{
+      min-height:30px;
+      width:30px;
+      padding:0;
+      background:#f4dfdd;
+      color:var(--red);
+      font-size:17px;
+    }
+
+    .empty{
+      padding:15px;
+      text-align:center;
+      color:var(--muted);
+      font-size:13px;
+    }
+
+    .small{
+      margin-top:7px;
+      color:var(--muted);
+      font-size:10px;
+      line-height:1.35;
+    }
+  </style>
+</head>
+
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <h1>Scanner MULTI MODEM</h1>
+    <div id="counter" class="counter">0/12</div>
+  </div>
+
+  <div class="card">
+    <div id="cameraBox">
+      <video id="video" autoplay muted playsinline></video>
+      <div class="hint">Inquadra i seriali nel riquadro bianco</div>
+      <div id="scanZone"></div>
+      <div id="flash" class="flash"></div>
+    </div>
+
+    <canvas id="scanCanvas"></canvas>
+
+    <div id="status" class="status">Premi AVVIA SCANSIONE.</div>
+
+    <div class="buttons">
+      <button id="btnStart" class="start" onclick="startScanner()">AVVIA SCANSIONE</button>
+      <button id="btnStop" class="stop" onclick="stopScanner()" disabled>STOP</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="summary">
+      <div class="metric">
+        <div class="k">SERIALI TROVATI</div>
+        <div id="foundCount" class="v">0</div>
+      </div>
+      <div class="metric">
+        <div class="k">TARGET BLOCCO</div>
+        <div class="v">12</div>
+      </div>
+    </div>
+
+    <div class="list-head">
+      <strong>Seriali MODEM acquisiti</strong>
+      <span id="resultState">0/12</span>
+    </div>
+
+    <div id="list">
+      <div class="empty">Nessun seriale acquisito.</div>
+    </div>
+
+    <div class="buttons">
+      <button class="danger" onclick="clearAll()">NUOVO BLOCCO</button>
+      <button class="copy" onclick="copyAll()">COPIA 12 SERIALI</button>
+    </div>
+
+    <div class="small">
+      Lettura LIVE, senza foto e senza OCR. Compatibilità MODEM derivata dalla lista reale:
+      seriali che iniziano con "%" e hanno 21 o 22 caratteri complessivi.
+      Lettori attivi: Code 39 Standard, Code 128 e Code 93.
+      I duplicati vengono ignorati e lo scanner si ferma automaticamente a 12/12.
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const TARGET = 12;
+  const MODEM_REGEX = /^%[A-Z0-9]{20,21}$/;
+
+  /*
+    La zona visualizzata e la zona realmente letta sono la stessa identica area.
+    Nel multi la zona è più alta del singolo per poter catturare più righe insieme.
+  */
+  const SCAN = {
+    left: 0.025,
+    top: 0.10,
+    width: 0.95,
+    height: 0.80
+  };
+
+  const SCAN_INTERVAL_MS = 150;
+  const HARD_EVERY_N_ATTEMPTS = 5;
+
+  const video = document.getElementById("video");
+  const canvas = document.getElementById("scanCanvas");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+  let stream = null;
+  let running = false;
+  let busy = false;
+  let loopTimer = null;
+  let attempts = 0;
+
+  let accepted = new Map();
+  let audioCtx = null;
+
+  function applyScanZone() {
+    const zone = document.getElementById("scanZone");
+    zone.style.left = (SCAN.left * 100) + "%";
+    zone.style.top = (SCAN.top * 100) + "%";
+    zone.style.width = (SCAN.width * 100) + "%";
+    zone.style.height = (SCAN.height * 100) + "%";
+  }
+
+  applyScanZone();
+
+  window.addEventListener("load", async () => {
+    try {
+      if (window.ZXingWASM?.prepareZXingModule) {
+        await ZXingWASM.prepareZXingModule({ fireImmediately: true });
+      }
+    } catch (e) {
+      console.warn("Preload ZXing non riuscito:", e);
+    }
+  });
+
+  function normalizeCode(value) {
+    let code = String(value || "")
+      .trim()
+      .toUpperCase()
+      .replace(/^\*/, "")
+      .replace(/\*$/, "")
+      .replace(/\s+/g, "");
+
+    // Compatibilità Code 39 Extended.
+    if (/^}[A-Z0-9]/.test(code)) {
+      code = "%R" + code.slice(1);
+    }
+
+    return code;
+  }
+
+  function isValidModemSerial(code) {
+    return MODEM_REGEX.test(code);
+  }
+
+  async function startScanner() {
+    if (running) return;
+
+    if (!window.isSecureContext) {
+      setStatus("La pagina deve essere aperta tramite HTTPS.", "err");
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setStatus("Questo browser non consente l'accesso alla fotocamera.", "err");
+      return;
+    }
+
+    if (!window.ZXingWASM?.readBarcodes) {
+      setStatus("Motore barcode non caricato. Ricarica la pagina.", "err");
+      return;
+    }
+
+    initAudio();
+
+    document.getElementById("btnStart").disabled = true;
+    setStatus("Apertura fotocamera...");
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          aspectRatio: { ideal: 16 / 9 }
+        },
+        audio: false
+      });
+
+      video.srcObject = stream;
+      await video.play();
+
+      // Autofocus continuo quando disponibile.
+      try {
+        const track = stream.getVideoTracks()[0];
+        const caps = track.getCapabilities?.() || {};
+        if (Array.isArray(caps.focusMode) && caps.focusMode.includes("continuous")) {
+          await track.applyConstraints({
+            advanced: [{ focusMode: "continuous" }]
+          });
+        }
+      } catch (_) {}
+
+      running = true;
+      busy = false;
+      attempts = 0;
+
+      document.getElementById("btnStart").disabled = true;
+      document.getElementById("btnStop").disabled = false;
+
+      setStatus("Scanner MULTI MODEM attivo.", "ok");
+      scheduleNextScan(0);
+
+    } catch (err) {
+      console.error(err);
+      document.getElementById("btnStart").disabled = false;
+      document.getElementById("btnStop").disabled = true;
+      setStatus("Fotocamera non disponibile: " + (err.message || err), "err");
+    }
+  }
+
+  function scheduleNextScan(delay = SCAN_INTERVAL_MS) {
+    if (!running) return;
+    clearTimeout(loopTimer);
+    loopTimer = setTimeout(scanVisibleZone, delay);
+  }
+
+  async function scanVisibleZone() {
+    if (!running) return;
+
+    if (busy || video.readyState < 2) {
+      scheduleNextScan(60);
+      return;
+    }
+
+    busy = true;
+    attempts++;
+
+    try {
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+
+      if (!vw || !vh) return;
+
+      // Stesso identico riquadro mostrato a video.
+      const sx = Math.round(vw * SCAN.left);
+      const sy = Math.round(vh * SCAN.top);
+      const sw = Math.round(vw * SCAN.width);
+      const sh = Math.round(vh * SCAN.height);
+
+      const maxWidth = 1700;
+      const scale = Math.min(1, maxWidth / sw);
+
+      const dw = Math.max(1, Math.round(sw * scale));
+      const dh = Math.max(1, Math.round(sh * scale));
+
+      canvas.width = dw;
+      canvas.height = dh;
+
+      ctx.drawImage(
+        video,
+        sx, sy, sw, sh,
+        0, 0, dw, dh
+      );
+
+      const imageData = ctx.getImageData(0, 0, dw, dh);
+      const hardPass = (attempts % HARD_EVERY_N_ATTEMPTS) === 0;
+
+      const results = await ZXingWASM.readBarcodes(imageData, {
+        formats: ["Code39Std", "Code128", "Code93"],
+        tryHarder: hardPass,
+        maxNumberOfSymbols: 12
+      });
+
+      processResults(results);
+
+    } catch (err) {
+      console.error("Errore lettura:", err);
+    } finally {
+      busy = false;
+
+      if (accepted.size >= TARGET) {
+        setStatus("BLOCCO COMPLETO: 12/12 seriali MODEM.", "ok");
+        beep(true);
+        setTimeout(stopScanner, 180);
+      } else {
+        scheduleNextScan();
+      }
+    }
+  }
+
+  function processResults(results) {
+    if (!Array.isArray(results) || !results.length) return;
+
+    let added = 0;
+
+    for (const result of results) {
+      if (accepted.size >= TARGET) break;
+
+      const code = normalizeCode(result.text || "");
+
+      if (!isValidModemSerial(code)) continue;
+      if (accepted.has(code)) continue;
+
+      accepted.set(code, {
+        code,
+        format: result.format || result.symbology || "BARCODE"
+      });
+
+      added++;
+    }
+
+    if (added > 0) {
+      updateUI();
+      flashGreen();
+      vibrate(40);
+
+      setStatus(
+        `Acquisiti ${added} nuovi seriali. Totale ${accepted.size}/12.`,
+        accepted.size >= TARGET ? "ok" : ""
+      );
+    }
+  }
+
+  function stopScanner() {
+    running = false;
+    busy = false;
+
+    clearTimeout(loopTimer);
+    loopTimer = null;
+
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      stream = null;
+    }
+
+    video.srcObject = null;
+
+    document.getElementById("btnStart").disabled = false;
+    document.getElementById("btnStop").disabled = true;
+
+    if (accepted.size < TARGET) {
+      setStatus(`Scanner fermato. Acquisiti ${accepted.size}/12 seriali.`);
+    }
+  }
+
+  function clearAll() {
+    accepted = new Map();
+    updateUI();
+
+    if (running) {
+      setStatus("Nuovo blocco avviato. Inquadra i 12 seriali.", "ok");
+    } else {
+      setStatus("Nuovo blocco. Premi AVVIA SCANSIONE.");
+    }
+  }
+
+  function updateUI() {
+    const arr = [...accepted.values()];
+    const count = arr.length;
+
+    document.getElementById("counter").textContent = `${count}/12`;
+    document.getElementById("foundCount").textContent = count;
+    document.getElementById("resultState").textContent = `${count}/12`;
+
+    const list = document.getElementById("list");
+
+    if (!count) {
+      list.innerHTML = '<div class="empty">Nessun seriale acquisito.</div>';
+      return;
+    }
+
+    list.innerHTML = arr.map((x, i) => `
+      <div class="row">
+        <div class="num">${i + 1}</div>
+        <div class="code">${escapeHtml(x.code)}</div>
+        <div class="fmt">${escapeHtml(x.format)}</div>
+        <button class="del" onclick="removeAt(${i})" aria-label="Elimina">×</button>
+      </div>
+    `).join("");
+
+    list.scrollTop = list.scrollHeight;
+  }
+
+  function removeAt(index) {
+    const entries = [...accepted.entries()];
+    if (index < 0 || index >= entries.length) return;
+
+    const [key] = entries[index];
+    accepted.delete(key);
+
+    updateUI();
+    setStatus(`Seriale rimosso. ${accepted.size}/12.`, "warn");
+  }
+
+  async function copyAll() {
+    const arr = [...accepted.keys()];
+
+    if (!arr.length) {
+      setStatus("Nessun seriale da copiare.", "warn");
+      return;
+    }
+
+    const text = arr.join("\n");
+
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (_) {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+
+    setStatus(
+      accepted.size === TARGET
+        ? "12 seriali copiati."
+        : `${accepted.size} seriali copiati (blocco incompleto).`,
+      accepted.size === TARGET ? "ok" : "warn"
+    );
+
+    beep(true);
+  }
+
+  function flashGreen() {
+    const el = document.getElementById("flash");
+    el.classList.add("on");
+    setTimeout(() => el.classList.remove("on"), 120);
+  }
+
+  function vibrate(pattern) {
+    try {
+      if (navigator.vibrate) navigator.vibrate(pattern);
+    } catch (_) {}
+  }
+
+  function initAudio() {
+    try {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === "suspended") audioCtx.resume();
+    } catch (_) {}
+  }
+
+  function beep(ok = true) {
+    try {
+      initAudio();
+      if (!audioCtx) return;
+
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      osc.frequency.value = ok ? 1000 : 380;
+      gain.gain.value = 0.06;
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.07);
+    } catch (_) {}
+  }
+
+  function setStatus(text, type = "") {
+    const el = document.getElementById("status");
+    el.className = "status" + (type ? " " + type : "");
+    el.textContent = text;
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  window.addEventListener("beforeunload", () => {
+    try { stopScanner(); } catch (_) {}
+  });
+
+  updateUI();
+</script>
+
+</body>
+</html>
