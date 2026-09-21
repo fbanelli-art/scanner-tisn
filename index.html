@@ -109,16 +109,15 @@
 
     /*
       IMPORTANTISSIMO:
-      il video riempie esattamente il riquadro senza crop CSS.
-      Le stesse percentuali usate per disegnare la zona bianca
-      vengono usate per ritagliare il frame realmente analizzato.
+      il video riempie il riquadro senza deformazioni usando object-fit: cover.
+      Il crop reale viene calcolato tenendo conto del ritaglio di object-fit: cover.
     */
     #video{
       position:absolute;
       inset:0;
       width:100%;
       height:100%;
-      object-fit:fill;
+      object-fit:cover;
       background:#000;
     }
 
@@ -632,10 +631,27 @@
         Queste coordinate sono le STESSE percentuali del rettangolo bianco.
         Nessuna area nascosta o diversa.
       */
-      const sx = Math.round(vw * SCAN.left);
-      const sy = Math.round(vh * SCAN.top);
-      const sw = Math.round(vw * SCAN.width);
-      const sh = Math.round(vh * SCAN.height);
+      const box = document.getElementById("cameraBox");
+      const boxW = box.clientWidth;
+      const boxH = box.clientHeight;
+
+      /*
+        Il video usa object-fit: cover.
+        Calcoliamo la porzione reale del sensore visibile dentro il riquadro,
+        così il rettangolo bianco e la zona realmente letta coincidono
+        senza deformare l'immagine.
+      */
+      const coverScale = Math.max(boxW / vw, boxH / vh);
+      const visibleSourceW = boxW / coverScale;
+      const visibleSourceH = boxH / coverScale;
+
+      const sourceOffsetX = (vw - visibleSourceW) / 2;
+      const sourceOffsetY = (vh - visibleSourceH) / 2;
+
+      const sx = Math.round(sourceOffsetX + visibleSourceW * SCAN.left);
+      const sy = Math.round(sourceOffsetY + visibleSourceH * SCAN.top);
+      const sw = Math.round(visibleSourceW * SCAN.width);
+      const sh = Math.round(visibleSourceH * SCAN.height);
 
       /*
         Manteniamo una risoluzione utile alta ma non enorme:
