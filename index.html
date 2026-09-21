@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#111827">
-  <title>Scanner TISN</title>
+  <title>Scanner MODEM</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2@1.12.1/dist/quagga.min.js"></script>
 
@@ -315,7 +315,7 @@
 <body>
   <div class="app">
     <div class="topbar">
-      <h1>Scanner TISN</h1>
+      <h1>Scanner MODEM</h1>
       <div id="counter" class="counter">0 letti</div>
     </div>
 
@@ -327,14 +327,14 @@
     <div class="card">
       <div id="interactive">
         <div class="shade"></div>
-        <div class="hint">Inquadra un solo seriale %R</div>
+        <div class="hint">Inquadra un solo seriale MODEM</div>
         <div class="scan-zone"></div>
         <div id="flash" class="flash"></div>
       </div>
 
       <div id="status" class="status">Premi AVVIA SCANSIONE.</div>
 
-      <div class="last-label">ULTIMO TISN</div>
+      <div class="last-label">ULTIMO SERIALE</div>
       <div id="lastCode" class="last-code">—</div>
 
       <div class="buttons">
@@ -363,14 +363,14 @@
       </div>
 
       <div class="small">
-        Lettura limitata al formato CODE 39. Un codice viene acquisito solo dopo due letture consecutive uguali.
-        I duplicati vengono ignorati.
+        Lettura seriali MODEM: Code 39 / Code 39 Extended / Code 128.
+        Sono accettate solo le famiglie MODEM rilevate nell'elenco reale; i duplicati vengono ignorati.
       </div>
     </div>
   </div>
 
 <script>
-  const TISN_REGEX = /^%R[A-Z0-9]{20}$/;
+  const MODEM_REGEX = /^(?:%R[A-Z0-9]{19,20}|%539[A-Z0-9]{17,18}|%3S[A-Z0-9]{19}|%19GI[A-Z0-9]{17}|%BA[A-Z0-9]{19})$/;
 
   let running = false;
   let accepted = [];
@@ -435,8 +435,8 @@
       return code;
     }
 
-  function isValidTisn(code) {
-    return TISN_REGEX.test(code);
+  function isValidModemSerial(code) {
+    return MODEM_REGEX.test(code);
   }
 
   function setStatus(text, type = "") {
@@ -519,7 +519,7 @@
 
       locator: {
         patchSize: "medium",
-        halfSample: false
+        halfSample: true
       },
 
       decoder: {
@@ -528,7 +528,7 @@
 
       locate: true,
 
-      frequency: 12
+      frequency: 20
     };
 
     Quagga.init(config, function(err) {
@@ -552,7 +552,7 @@
       document.getElementById("btnStart").disabled = true;
       document.getElementById("btnStop").disabled = false;
 
-      setStatus("Scanner attivo. Inquadra il primo TISN.", "ok");
+      setStatus("Scanner attivo. Inquadra il seriale MODEM.", "ok");
     });
   }
 
@@ -583,32 +583,18 @@
 
     if (!code) return;
 
-    if (!isValidTisn(code)) {
+    if (!isValidModemSerial(code)) {
       candidate = "";
       candidateHits = 0;
       return;
     }
 
-    const now = Date.now();
-
-    if (code === candidate && (now - candidateAt) < 1400) {
-      candidateHits++;
-    } else {
-      candidate = code;
-      candidateHits = 1;
-    }
-
-    candidateAt = now;
-
-    // Due letture uguali consecutive: riduce i falsi positivi.
-    if (candidateHits < 2) {
-      setStatus("TISN individuato, verifica lettura...");
-      return;
-    }
-
+    // Il formato MODEM è validato contro le famiglie reali presenti nel magazzino.
+    // Accettiamo quindi subito la prima lettura valida per rendere lo scanner più rapido.
     candidate = "";
     candidateHits = 0;
-    cooldownUntil = Date.now() + 650;
+    candidateAt = Date.now();
+    cooldownUntil = Date.now() + 350;
 
     if (acceptedSet.has(code)) {
       setStatus("Duplicato ignorato: " + code, "warn");
@@ -624,7 +610,7 @@
 
     acceptedSet.add(code);
 
-    setStatus("ACQUISITO: " + code, "ok");
+    setStatus("ACQUISITO MODEM: " + code, "ok");
     flashGreen();
     beep(true);
     vibrate(80);
