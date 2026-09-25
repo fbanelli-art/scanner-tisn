@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>Scanner QR PRESA MDS</title>
+
+  <!-- Decodifica QR locale tramite ZXing WASM. -->
+  <script src="https://cdn.jsdelivr.net/npm/zxing-wasm/dist/iife/reader/index.js"></script>
+
+
+  
+  <style>
+    :root{
+      --bg:#eef1f4;
+      --card:#fff;
+      --text:#17202a;
+      --muted:#69737d;
+      --blue:#1565c0;
+      --green:#11863b;
+      --red:#b3261e;
+      --amber:#8a6700;
+      --border:#d5dbe1;
+    }
+
+    *{box-sizing:border-box}
+
+    html,body{
+      margin:0;
+      min-height:100%;
+      font-family:Arial,Helvetica,sans-serif;
+      background:var(--bg);
+      color:var(--text);
+    }
+
+    body{
+      padding:
+        max(8px,env(safe-area-inset-top))
+        8px
+        max(12px,env(safe-area-inset-bottom));
+    }
+
+    .app{
+      max-width:720px;
+      margin:0 auto;
+    }
+
+    .topbar{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:8px;
+      margin-bottom:8px;
+    }
+
+    h1{
+      margin:0;
+      font-size:21px;
+    }
+
+    .counter{
+      background:#111827;
+      color:#fff;
+      border-radius:999px;
+      padding:7px 12px;
+      font-weight:800;
+      min-width:82px;
+      text-align:center;
+    }
+
+    .card{
+      background:var(--card);
+      border-radius:12px;
+      padding:10px;
+      box-shadow:0 2px 8px rgba(0,0,0,.07);
+      margin-bottom:8px;
+    }
+
+    .target-row{
+      display:grid;
+      grid-template-columns:1fr 105px;
+      gap:8px;
+      align-items:center;
+    }
+
+    .target-row label{
+      font-size:13px;
+      font-weight:800;
+    }
+
+    .target-row input{
+      width:100%;
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:8px;
+      text-align:center;
+      font-size:17px;
+      font-weight:800;
+    }
+
+    /* Riquadro quadrato per inquadrare interamente il QR. */
+    #cameraBox{
+      position:relative;
+      width:100%;
+      height:auto;
+      aspect-ratio:1;
+      max-width:420px;
+      margin:auto;
+      background:#000;
+      border-radius:11px;
+      overflow:hidden;
+    }
+
+    /*
+      IMPORTANTISSIMO:
+      il video riempie il riquadro senza deformazioni usando object-fit: cover.
+      Il crop reale viene calcolato tenendo conto del ritaglio di object-fit: cover.
+    */
+    #video{
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      background:#000;
+    }
+
+    #shade{
+      position:absolute;
+      inset:0;
+      pointer-events:none;
+      z-index:2;
+    }
+
+    #scanZone{
+      position:absolute;
+      z-index:3;
+      border:2px solid #fff;
+      border-radius:8px;
+      pointer-events:none;
+      box-shadow:0 0 0 9999px rgba(0,0,0,.38);
+    }
+
+    #scanZone::after{display:none}
+
+    .hint{
+      position:absolute;
+      z-index:4;
+      top:5px;
+      left:50%;
+      transform:translateX(-50%);
+      padding:4px 7px;
+      border-radius:6px;
+      background:rgba(0,0,0,.70);
+      color:#fff;
+      font-size:11px;
+      font-weight:800;
+      white-space:nowrap;
+      pointer-events:none;
+    }
+
+    .flash{
+      position:absolute;
+      inset:0;
+      z-index:5;
+      background:rgba(24,180,80,.30);
+      opacity:0;
+      pointer-events:none;
+      transition:opacity .10s;
+    }
+
+    .flash.on{opacity:1}
+
+    #scanCanvas{display:none}
+
+    .status{
+      margin-top:8px;
+      min-height:40px;
+      padding:9px 10px;
+      border-radius:9px;
+      background:#edf1f4;
+      font-size:13px;
+      font-weight:800;
+      line-height:1.3;
+    }
+
+    .status.ok{background:#e6f5ea;color:#126b2f}
+    .status.warn{background:#fff4d5;color:#755600}
+    .status.err{background:#fde9e8;color:#9f1d16}
+
+    .last-grid{
+      display:grid;
+      grid-template-columns:1fr auto;
+      gap:8px;
+      align-items:end;
+      margin-top:8px;
+    }
+
+    .last-label,.format-label{
+      color:var(--muted);
+      font-size:10px;
+      font-weight:800;
+    }
+
+    .last-code{
+      margin-top:2px;
+      min-height:23px;
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+      font-size:16px;
+      font-weight:900;
+      word-break:break-all;
+    }
+
+    .format-value{
+      margin-top:2px;
+      text-align:right;
+      font-size:12px;
+      font-weight:800;
+    }
+
+    .buttons{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:7px;
+      margin-top:8px;
+    }
+
+    button{
+      border:0;
+      border-radius:9px;
+      min-height:44px;
+      padding:8px;
+      font-size:14px;
+      font-weight:900;
+      cursor:pointer;
+    }
+
+    button:disabled{opacity:.45;cursor:default}
+
+    .start{background:var(--blue);color:#fff}
+    .stop{background:#e2e6ea;color:#111}
+    .danger{background:#f4dfdd;color:var(--red)}
+    .copy{background:var(--green);color:#fff}
+
+    .list-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:7px;
+      font-size:14px;
+    }
+
+    #list{
+      max-height:210px;
+      overflow:auto;
+      border:1px solid var(--border);
+      border-radius:9px;
+    }
+
+    .row{
+      display:grid;
+      grid-template-columns:34px 1fr 72px 32px;
+      gap:5px;
+      align-items:center;
+      padding:7px 6px;
+      border-bottom:1px solid #edf0f2;
+    }
+
+    .row:last-child{border-bottom:0}
+
+    .num{
+      color:var(--muted);
+      font-size:12px;
+      text-align:center;
+      font-weight:800;
+    }
+
+    .code{
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+      font-size:12px;
+      font-weight:900;
+      word-break:break-all;
+    }
+
+    .fmt{
+      color:var(--muted);
+      font-size:10px;
+      text-align:right;
+    }
+
+    .del{
+      min-height:30px;
+      width:30px;
+      padding:0;
+      background:#f4dfdd;
+      color:var(--red);
+      font-size:17px;
+    }
+
+    .empty{
+      padding:15px;
+      text-align:center;
+      color:var(--muted);
+      font-size:13px;
+    }
+
+    .small{
+      margin-top:7px;
+      color:var(--muted);
+      font-size:10px;
+      line-height:1.35;
+    }
+  </style>
+</head>
+
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <h1>Scanner QR PRESA</h1>
+    <div id="counter" class="counter">0 letti</div>
+  </div>
+
+  <div class="card target-row">
+    <label for="targetQty">
+      Quantità da acquisire
+      <span style="font-weight:400;color:#69737d">(0 = senza limite)</span>
+    </label>
+    <input id="targetQty" type="number" min="0" step="1" value="1">
+  </div>
+
+  <div class="card">
+    <div id="cameraBox">
+      <video id="video" autoplay muted playsinline></video>
+      <div id="shade"></div>
+      <div class="hint">Inquadra tutto il QR nel riquadro</div>
+      <div id="scanZone"></div>
+      <div id="flash" class="flash"></div>
+    </div>
+
+    <canvas id="scanCanvas"></canvas>
+
+    <div id="status" class="status">Premi AVVIA SCANSIONE.</div>
+
+    <div class="last-grid">
+      <div>
+        <div class="last-label">ULTIMO CODICE QR</div>
+        <div id="lastCode" class="last-code">—</div>
+      </div>
+      <div>
+        <div class="format-label">FORMATO</div>
+        <div id="lastFormat" class="format-value">—</div>
+      </div>
+    </div>
+
+    <div class="buttons">
+      <button id="btnStart" class="start" onclick="startScanner()">AVVIA SCANSIONE</button>
+      <button id="btnStop" class="stop" onclick="stopScanner()" disabled>STOP</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="list-head">
+      <strong>Codici QR acquisiti</strong>
+      <span id="progress">0</span>
+    </div>
+
+    <div id="list">
+      <div class="empty">Nessun codice acquisito.</div>
+    </div>
+
+    <div class="buttons">
+      <button class="danger" onclick="removeLast()">ANNULLA ULTIMO</button>
+      <button class="copy" onclick="copyAll()">COPIA TUTTI</button>
+    </div>
+
+    <div class="small">
+      Inquadra il QR completo, lasciando visibile il bordo bianco.
+      I duplicati vengono ignorati. Premi COPIA TUTTI e torna al compilatore.
+      Il contenuto viene copiato esattamente come letto.
+    </div>
+  </div>
+
+</div>
+
+<script>
+
+  /*
+    UNA SOLA definizione della zona:
+    è usata sia per il riquadro visibile sia per il crop del frame analizzato.
+    Quindi ciò che vedi nel riquadro bianco è ciò che viene realmente letto.
+  */
+  const SCAN = {
+    left: 0.08,
+    top: 0.08,
+    width: 0.84,
+    height: 0.84
+  };
+
+  const FAST_INTERVAL_MS = 120;
+  const HARD_EVERY_N_ATTEMPTS = 6;
+  const ACCEPT_COOLDOWN_MS = 350;
+
+  const video = document.getElementById("video");
+  const canvas = document.getElementById("scanCanvas");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+  let stream = null;
+  let running = false;
+  let session = 0;
+  let starting = false;
+  let busy = false;
+  let loopTimer = null;
+  let attempts = 0;
+  let cooldownUntil = 0;
+
+  let accepted = [];
+  let acceptedSet = new Set();
+
+  let audioCtx = null;
+
+  function applyScanZone() {
+    const zone = document.getElementById("scanZone");
+    zone.style.left = (SCAN.left * 100) + "%";
+    zone.style.top = (SCAN.top * 100) + "%";
+    zone.style.width = (SCAN.width * 100) + "%";
+    zone.style.height = (SCAN.height * 100) + "%";
+  }
+
+  applyScanZone();
+
+  // Precarica il motore WASM per ridurre il ritardo al primo codice.
+  window.addEventListener("load", async () => {
+    try {
+      if (window.ZXingWASM?.prepareZXingModule) {
+        await ZXingWASM.prepareZXingModule({ fireImmediately: true });
+      }
+    } catch (e) {
+      console.warn("Preload ZXing non riuscito:", e);
+    }
+  });
+
+  function normalizeCode(value) {
+    return String(value ?? "");
+  }
+
+  function isValidQrCode(code) {
+    return code.length > 0;
+  }
+
+  function setStatus(text, type = "") {
+    const el = document.getElementById("status");
+    el.className = "status" + (type ? " " + type : "");
+    el.textContent = text;
+  }
+
+  function expectedQty() {
+    return Math.max(
+      0,
+      parseInt(document.getElementById("targetQty").value || "0", 10)
+    );
+  }
+
+  function initAudio() {
+    try {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === "suspended") audioCtx.resume();
+    } catch (_) {}
+  }
+
+  function beep(ok = true) {
+    try {
+      initAudio();
+      if (!audioCtx) return;
+
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      osc.frequency.value = ok ? 1050 : 380;
+      gain.gain.value = 0.06;
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      osc.start();
+      osc.stop(audioCtx.currentTime + (ok ? 0.065 : 0.10));
+    } catch (_) {}
+  }
+
+  function vibrate(pattern) {
+    try {
+      if (navigator.vibrate) navigator.vibrate(pattern);
+    } catch (_) {}
+  }
+
+  function flashGreen() {
+    const el = document.getElementById("flash");
+    el.classList.add("on");
+    setTimeout(() => el.classList.remove("on"), 120);
+  }
+
+  async function startScanner() {
+    if (running || starting) return;
+
+    if (!window.isSecureContext) {
+      setStatus("La pagina deve essere aperta tramite HTTPS.", "err");
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setStatus("Questo browser non consente l'accesso alla fotocamera.", "err");
+      return;
+    }
+
+    if (!window.ZXingWASM?.readBarcodes) {
+      setStatus("Motore QR non caricato. Ricarica la pagina.", "err");
+      return;
+    }
+
+    starting = true;
+    const currentSession = ++session;
+    initAudio();
+
+    document.getElementById("btnStart").disabled = true;
+    setStatus("Apertura fotocamera...");
+
+    try {
+      const openedStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          aspectRatio: { ideal: 16 / 9 }
+        },
+        audio: false
+      });
+
+      if (currentSession !== session) {
+        openedStream.getTracks().forEach(track => track.stop());
+        return;
+      }
+      stream = openedStream;
+      video.srcObject = stream;
+      await video.play();
+
+      if (currentSession !== session) return;
+
+      // Autofocus continuo, quando il telefono/browser lo espone.
+      try {
+        const track = stream.getVideoTracks()[0];
+        const caps = track.getCapabilities?.() || {};
+        if (Array.isArray(caps.focusMode) && caps.focusMode.includes("continuous")) {
+          await track.applyConstraints({
+            advanced: [{ focusMode: "continuous" }]
+          });
+        }
+      } catch (_) {}
+
+      if (currentSession !== session) return;
+      running = true;
+      starting = false;
+      busy = false;
+      attempts = 0;
+      cooldownUntil = 0;
+
+      document.getElementById("btnStart").disabled = true;
+      document.getElementById("btnStop").disabled = false;
+
+      setStatus("Scanner QR PRESA attivo.", "ok");
+      scheduleNextScan(0);
+
+    } catch (err) {
+      if (currentSession !== session) return;
+      stopScanner();
+      console.error(err);
+      document.getElementById("btnStart").disabled = false;
+      document.getElementById("btnStop").disabled = true;
+      setStatus("Fotocamera non disponibile: " + (err.message || err), "err");
+    }
+  }
+
+  function scheduleNextScan(delay = FAST_INTERVAL_MS) {
+    if (!running) return;
+    clearTimeout(loopTimer);
+    loopTimer = setTimeout(scanVisibleZone, delay);
+  }
+
+  async function scanVisibleZone() {
+    if (!running) return;
+
+    if (busy || video.readyState < 2) {
+      scheduleNextScan(60);
+      return;
+    }
+
+    if (Date.now() < cooldownUntil) {
+      scheduleNextScan(60);
+      return;
+    }
+
+    busy = true;
+    const currentSession = session;
+    attempts++;
+
+    try {
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      if (!vw || !vh) return;
+
+      /*
+        Queste coordinate sono le STESSE percentuali del rettangolo bianco.
+        Nessuna area nascosta o diversa.
+      */
+      const box = document.getElementById("cameraBox");
+      const boxW = box.clientWidth;
+      const boxH = box.clientHeight;
+
+      /*
+        Il video usa object-fit: cover.
+        Calcoliamo la porzione reale del sensore visibile dentro il riquadro,
+        così il rettangolo bianco e la zona realmente letta coincidono
+        senza deformare l'immagine.
+      */
+      const coverScale = Math.max(boxW / vw, boxH / vh);
+      const visibleSourceW = boxW / coverScale;
+      const visibleSourceH = boxH / coverScale;
+
+      const sourceOffsetX = (vw - visibleSourceW) / 2;
+      const sourceOffsetY = (vh - visibleSourceH) / 2;
+
+      const sx = Math.round(sourceOffsetX + visibleSourceW * SCAN.left);
+      const sy = Math.round(sourceOffsetY + visibleSourceH * SCAN.top);
+      const sw = Math.round(visibleSourceW * SCAN.width);
+      const sh = Math.round(visibleSourceH * SCAN.height);
+
+      /*
+        Manteniamo una risoluzione utile alta ma non enorme:
+        il crop è piccolo, quindi ZXing lavora molto più velocemente.
+      */
+      const maxWidth = 1500;
+      const scale = Math.min(1, maxWidth / sw);
+      const dw = Math.max(1, Math.round(sw * scale));
+      const dh = Math.max(1, Math.round(sh * scale));
+
+      canvas.width = dw;
+      canvas.height = dh;
+
+      ctx.drawImage(
+        video,
+        sx, sy, sw, sh,
+        0, 0, dw, dh
+      );
+
+      const imageData = ctx.getImageData(0, 0, dw, dh);
+
+      // Quasi tutti i tentativi sono rapidi; periodicamente facciamo una passata più profonda.
+      const hardPass = (attempts % HARD_EVERY_N_ATTEMPTS) === 0;
+
+      const results = await ZXingWASM.readBarcodes(imageData, {
+        formats: ["QRCode"],
+        tryHarder: hardPass,
+        maxNumberOfSymbols: 1
+      });
+
+      if (!running || currentSession !== session) return;
+      if (Array.isArray(results) && results.length) {
+        const result = results[0];
+        const raw = result.text || "";
+        const code = normalizeCode(raw);
+
+        if (isValidQrCode(code)) {
+          acceptCode(code, result.format || result.symbology || "QRCode");
+        }
+      }
+
+    } catch (err) {
+      console.error("Errore lettura:", err);
+    } finally {
+      if (currentSession === session) {
+        busy = false;
+        scheduleNextScan();
+      }
+    }
+  }
+
+  function acceptCode(code, format) {
+    if (acceptedSet.has(code)) {
+      cooldownUntil = Date.now() + 250;
+      setStatus("Duplicato ignorato: " + code, "warn");
+      return;
+    }
+
+    accepted.push({
+      code,
+      format,
+      time: new Date().toISOString()
+    });
+
+    acceptedSet.add(code);
+    cooldownUntil = Date.now() + ACCEPT_COOLDOWN_MS;
+
+    document.getElementById("lastCode").textContent = code;
+    document.getElementById("lastFormat").textContent = format;
+
+    setStatus("ACQUISITO: " + code, "ok");
+    flashGreen();
+    beep(true);
+    vibrate(60);
+
+    updateUI();
+
+    const target = expectedQty();
+    if (target > 0 && accepted.length >= target) {
+      stopScanner();
+      setStatus(`COMPLETATO: ${accepted.length}/${target}`, "ok");
+    }
+  }
+
+  function stopScanner() {
+    session++;
+    starting = false;
+    running = false;
+    busy = false;
+
+    clearTimeout(loopTimer);
+    loopTimer = null;
+
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      stream = null;
+    }
+
+    video.srcObject = null;
+
+    document.getElementById("btnStart").disabled = false;
+    document.getElementById("btnStop").disabled = true;
+
+    setStatus("Scanner fermato.");
+  }
+
+  function updateUI() {
+    const count = accepted.length;
+    const target = expectedQty();
+
+    document.getElementById("counter").textContent =
+      count + (count === 1 ? " letto" : " letti");
+
+    document.getElementById("progress").textContent =
+      target > 0 ? `${count}/${target}` : `${count}`;
+
+    const list = document.getElementById("list");
+
+    if (!count) {
+      list.innerHTML = '<div class="empty">Nessun codice acquisito.</div>';
+      document.getElementById("lastCode").textContent = "—";
+      document.getElementById("lastFormat").textContent = "—";
+      return;
+    }
+
+    document.getElementById("lastCode").textContent = accepted[count - 1].code;
+    document.getElementById("lastFormat").textContent = accepted[count - 1].format;
+
+    list.innerHTML = accepted.map((x, i) => `
+      <div class="row">
+        <div class="num">${i + 1}</div>
+        <div class="code">${escapeHtml(x.code)}</div>
+        <div class="fmt">${escapeHtml(x.format)}</div>
+        <button class="del" onclick="removeAt(${i})" aria-label="Elimina">×</button>
+      </div>
+    `).join("");
+
+    list.scrollTop = list.scrollHeight;
+  }
+
+  function removeAt(index) {
+    if (index < 0 || index >= accepted.length) return;
+
+    const removed = accepted.splice(index, 1)[0];
+    acceptedSet.delete(removed.code);
+
+    updateUI();
+    setStatus("Rimosso: " + removed.code);
+  }
+
+  function removeLast() {
+    if (!accepted.length) {
+      setStatus("La lista è già vuota.", "warn");
+      return;
+    }
+
+    const removed = accepted.pop();
+    acceptedSet.delete(removed.code);
+
+    updateUI();
+    setStatus("Ultimo codice rimosso: " + removed.code);
+  }
+
+  async function copyAll() {
+    if (!accepted.length) {
+      setStatus("Nessun codice da copiare.", "warn");
+      return;
+    }
+
+    const text = accepted.map(x => x.code).join("\n");
+
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (_) {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const copied = document.execCommand("copy");
+      ta.remove();
+      if (!copied) {
+        setStatus("Copia non disponibile: seleziona e copia il codice dall’elenco.", "err");
+        return;
+      }
+    }
+
+    setStatus(`${accepted.length} codici copiati.`, "ok");
+    beep(true);
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && (running || starting)) stopScanner();
+  });
+  window.addEventListener("pagehide", () => stopScanner());
+
+  window.addEventListener("beforeunload", () => {
+    try { stopScanner(); } catch (_) {}
+  });
+
+  updateUI();
+</script>
+
+</body>
+</html>
+
