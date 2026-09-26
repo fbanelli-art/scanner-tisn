@@ -804,8 +804,32 @@
     try{ stopScanner(); }catch(_){}
   });
 
+  // Collegamento MDS: dati nel frammento, nessuna credenziale e nessuna chiamata SQL.
+  function loadMdsDocument(){
+    if(!location.hash.startsWith('#mds=')) return;
+    try{
+      const data=JSON.parse(decodeURIComponent(location.hash.slice(5)));
+      if(data.v!==1 || !Array.isArray(data.expected) || !Array.isArray(data.scanned) || !data.expected.length || data.expected.length>2000 || data.scanned.length>2000) throw Error('Formato elenco non valido.');
+      // Non ignorare seriali del documento incompatibili con lo scanner MODEM.
+      if([...data.expected,...data.scanned].some(x=>typeof x!=='string'||!isValidModemSerial(x))) throw Error('Questo DDT contiene seriali non compatibili con lo scanner MODEM (% e 21/22 caratteri). Usare lo scanner fisico nella Web App.');
+      if(new Set(data.expected).size!==data.expected.length||data.scanned.some(x=>!data.expected.includes(x))) throw Error('Elenco atteso o letture precedenti incoerenti.');
+      setMode('CHECK');
+      document.getElementById('initialList').value=data.expected.join('\n');
+      document.getElementById('expectedQty').value=0;
+      scanned=new Map(data.scanned.map(code=>[code,{code,format:'VERIFICATO MDS',time:''}]));
+      loadInitialList();
+      document.querySelector('h1').textContent='Verifica DDT '+String(data.ddt||'');
+      setStatus('DDT caricato: '+expected.size+' attesi, '+matched.size+' già verificati. Al termine copia tutti gli scansionati nella Web App.','ok');
+    }catch(e){
+      document.getElementById('btnStart').disabled=true;
+      setStatus('Caricamento DDT non riuscito: '+e.message,'err');
+    }
+    try{history.replaceState(null,'',location.pathname+location.search);}catch(_){}
+  }
+  loadMdsDocument();
   updateUI();
 </script>
 
 </body>
 </html>
+
